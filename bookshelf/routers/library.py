@@ -17,6 +17,8 @@ from ._files import book_file_response, cover_response
 
 router = APIRouter()
 
+router = APIRouter()
+
 PAGE_SIZE = 60  # books per page; more are loaded while scrolling
 
 
@@ -26,6 +28,23 @@ def _entry_or_404(db: DB, user: User, book_id: int) -> BookEntry:
         raise HTTPException(status_code=404, detail="Book not found.")
     return entry
 
+
+
+@router.get("/read/{book_id}")
+def read_book(
+    request: Request, db: DB, user: CurrentUser, storage: AppStorage, book_id: int
+) -> Response:
+    """Read EPUB in browser using foliate-js."""
+    entry = _entry_or_404(db, user, book_id)
+    return render(
+        request,
+        "read.html",
+        user=user,
+        nav="reading",
+        entry=entry,
+        book=entry.book,
+        file_url=f"/books/{book_id}/file",
+    )
 
 @router.get("/")
 def library_page(
@@ -161,6 +180,7 @@ def update_book(
     entry = _entry_or_404(db, user, book_id)
     library.update_metadata(
         db,
+        storage,
         entry.book,
         title=title,
         author=author,

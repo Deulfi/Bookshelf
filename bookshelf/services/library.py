@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePath
@@ -91,7 +93,14 @@ def import_book(
             raise DuplicateBookError(existing)
 
         metadata = extract_metadata(temp_path, fmt, filename)
-        stored_path = storage.store_book(temp_path, user.id, fmt)
+        root = storage.upload_root(user.id)
+        if storage.ingest_dir is not None:
+            relative = storage.schema_relative_path(
+                metadata.author, metadata.series, metadata.title, fmt
+            )
+        else:
+            relative = f"{uuid.uuid4().hex}.{fmt}"
+        stored_path = storage.store_book(temp_path, root, relative)
         book = Book(
             user_id=user.id,
             title=metadata.title or filename,
@@ -117,10 +126,81 @@ def import_book(
     except BaseException:
         db.rollback()
         if stored_path is not None:
-            (storage.books_dir / stored_path).unlink(missing_ok=True)
+            (storage.upload_root(user.id) / stored_path).unlink(missing_ok=True)
         raise
     finally:
         temp_path.unlink(missing_ok=True)
+
+
+def import_from_disk(db: Session, storage: Storage, user: User, path: Path) -> Book:
+    """Register a book file that already lives in the library folder (no copy)."""
+    if storage.ingest_dir is None:
+        raise LibraryError("No library folder is configured.")
+    fmt = detect_format(path.name)
+    if fmt is None:
+        raise LibraryError(f"Unsupported file type: {path.name}")
+
+    document_hash = partial_md5(path)
+    existing = db.scalar(select(Book).where(Book.partial_md5 == document_hash))
+    if existing is not None:
+        raise DuplicateBookError(existing)
+
+    metadata = extract_metadata(path, fmt, path.name)
+    book = Book(
+        user_id=user.id,
+        title=metadata.title or path.name,
+        author=metadata.author,
+        series=metadata.series,
+        series_index=metadata.series_index,
+        description=metadata.description,
+        language=metadata.language,
+        publisher=metadata.publisher,
+        format=fmt,
+        original_filename=path.name,
+        file_path=path.relative_to(storage.ingest_dir).as_posix(),
+        file_size=path.stat().st_size,
+        partial_md5=document_hash,
+        filename_md5=filename_md5(path.name),
+    )
+    db.add(book)
+    db.flush()
+    if metadata.cover:
+        book.has_cover = covers.save_cover(metadata.cover, storage.cover_path(book.id))
+    db.commit()
+    return book
+
+
+def sync_library(
+    db: Session, storage: Storage, user: User, log: Callable[[str], None] | None = None
+) -> int:
+    """Scan the library folder for new books and register them in place."""
+    if storage.ingest_dir is None or not storage.ingest_dir.is_dir():
+        return 0
+    # ponytail: path pre-filter avoids re-hashing known files; a books_dir path that
+    # collides with an ingest path would be skipped (negligible in practice).
+    known_paths = set(db.scalars(select(Book.file_path)))
+    imported = 0
+    for path in sorted(storage.ingest_dir.rglob("*")):
+        if not path.is_file() or detect_format(path.name) is None:
+            continue
+        relative = path.relative_to(storage.ingest_dir).as_posix()
+        if relative in known_paths:
+            continue
+        try:
+            book = import_from_disk(db, storage, user, path)
+        except DuplicateBookError:
+            continue
+        except LibraryError as error:
+            if log:
+                log(f"skipped {relative}: {error}")
+            continue
+        imported += 1
+        known_paths.add(relative)
+        if log:
+            log(f"imported {relative} as #{book.id}")
+    if imported:
+        storage.cleanup_old_covers_and_dirs(db)
+    return imported
 
 
 def _copy_limited(source: BinaryIO, target: Path, max_bytes: int) -> int:
@@ -267,7 +347,7 @@ def get_entry(db: Session, user: User, book_id: int) -> BookEntry | None:
 # --- Mutations --------------------------------------------------------------------------------
 
 
-def update_metadata(db: Session, book: Book, **changes: object) -> None:
+def update_metadata(db: Session, storage: Storage, book: Book, **changes: object) -> None:
     title = str(changes.pop("title", "") or "").strip()
     if title:
         book.title = title[:500]
@@ -277,7 +357,12 @@ def update_metadata(db: Session, book: Book, **changes: object) -> None:
             setattr(book, field, value or None)
     if "series_index" in changes:
         book.series_index = changes["series_index"]  # type: ignore[assignment]
+    if storage.ingest_dir is not None and (storage.ingest_dir / book.file_path).is_file():
+        relative = storage.schema_relative_path(book.author, book.series, book.title, book.format)
+        if relative != book.file_path and storage.move_book(book, relative):
+            book.file_path = relative
     db.commit()
+    storage.cleanup_old_covers_and_dirs(db)
 
 
 def replace_cover(db: Session, storage: Storage, book: Book, data: bytes) -> None:
@@ -301,3 +386,4 @@ def delete_book(db: Session, storage: Storage, book: Book) -> None:
     storage.delete_book_files(book)
     db.delete(book)
     db.commit()
+    storage.cleanup_old_covers_and_dirs(db)

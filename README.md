@@ -72,6 +72,7 @@ Set these in `.env` (see [.env.example](.env.example)). All of them are optional
 | `BOOKSHELF_MAX_UPLOAD_MB` | `200` | Maximum size of a single upload |
 | `BOOKSHELF_SESSION_DAYS` | `30` | How long a web login lasts |
 | `BOOKSHELF_SECURE_COOKIES` | `false` | Set to `true` when served over HTTPS |
+| `BOOKSHELF_INGEST_DIR` | *(empty)* | Directory to scan for new books (empty = disabled) |
 | `TZ` | `UTC` | Time zone for reading statistics, e.g. `Europe/Berlin` |
 
 When running without Docker Compose, `BOOKSHELF_DATA_DIR` (default `./data`, `/data` in the

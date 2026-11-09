@@ -32,7 +32,8 @@
     </div>
 
     <div class="actions">
-      <a class="btn btn-primary" href="/books/{{ book.id }}/file" download>{{ icon('download', 18) }} Download</a>
+      <a class="btn btn-primary" href="/read/{{ book.id }}" target="_blank">{{ icon('book', 18) }} Read in Browser</a>
+      <a class="btn" href="/books/{{ book.id }}/file" download>{{ icon('download', 18) }} Download</a>
       <form method="post" action="/books/{{ book.id }}/device">
         {% if book.device_sync_at %}
         <input type="hidden" name="enabled" value="false">

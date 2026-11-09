@@ -74,7 +74,7 @@ class Book(Base):
 
     format: Mapped[str] = mapped_column(String(10))
     original_filename: Mapped[str] = mapped_column(String(500))
-    file_path: Mapped[str] = mapped_column(String(500))  # relative to Storage.books_dir
+    file_path: Mapped[str] = mapped_column(String(500))  # relative to the library root
     file_size: Mapped[int]
     # KOReader document identifiers: "binary" (partial MD5 of the file) and "filename" (MD5).
     partial_md5: Mapped[str] = mapped_column(String(32), index=True)

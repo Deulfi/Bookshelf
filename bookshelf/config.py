@@ -15,6 +15,11 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_path(name: str) -> Path | None:
+    value = os.environ.get(name)
+    return Path(value) if value else None
+
+
 @dataclass(frozen=True)
 class Settings:
     data_dir: Path = Path("./data")
@@ -26,6 +31,8 @@ class Settings:
     secure_cookies: bool = False
     # IANA time zone used to group reading statistics by day (standard TZ variable).
     timezone: str = "UTC"
+    # Directory to scan for new books (empty = disabled)
+    ingest_dir: Path | None = None
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -36,6 +43,7 @@ class Settings:
             session_days=int(os.environ.get("BOOKSHELF_SESSION_DAYS", "30")),
             secure_cookies=_env_bool("BOOKSHELF_SECURE_COOKIES", False),
             timezone=os.environ.get("TZ", "UTC"),
+            ingest_dir=_env_path("BOOKSHELF_INGEST_DIR"),
         )
 
     @property

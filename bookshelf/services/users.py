@@ -98,6 +98,7 @@ def delete_user(db: Session, storage: Storage, user: User) -> None:
     storage.delete_user_dir(user.id)
     db.delete(user)
     db.commit()
+    storage.cleanup_old_covers_and_dirs(db)
 
 
 def _validate_password(password: str) -> None:

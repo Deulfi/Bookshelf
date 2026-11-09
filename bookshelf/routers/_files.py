@@ -11,8 +11,8 @@ from ..storage import Storage
 
 
 def book_file_response(storage: Storage, book: Book) -> FileResponse:
-    path = storage.book_path(book)
-    if not path.is_file():
+    path = storage.find_book_file(book)
+    if path is None:
         raise HTTPException(status_code=404, detail="The book file is missing.")
     return FileResponse(path, media_type=mime_type(book.format), filename=book.original_filename)
 
