@@ -83,3 +83,42 @@ def test_libraries_are_private(admin_client: TestClient, client: TestClient) -> 
 
 def test_upload_requires_login(client: TestClient) -> None:
     assert upload(client, "a.epub", make_epub()).status_code == 401
+
+
+def test_position_roundtrip(admin_client: TestClient) -> None:
+    book_id = upload(admin_client, "a.epub", make_epub()).json()["id"]
+
+    empty = admin_client.get(f"/api/books/{book_id}/position")
+    assert empty.status_code == 200
+    assert empty.json() == {"cfi": None, "percentage": None}
+
+    cfi = "epubcfi(/6/2[para:1]{1})"
+    put = admin_client.put(f"/api/books/{book_id}/position", json={"cfi": cfi, "fraction": 0.42})
+    assert put.status_code == 200
+    assert put.json() == {"cfi": cfi, "percentage": 0.42}
+
+    got = admin_client.get(f"/api/books/{book_id}/position")
+    assert got.json() == {"cfi": cfi, "percentage": 0.42}
+
+    # the record is the one the library displays (keyed by the book's partial_md5)
+    page = admin_client.get(f"/books/{book_id}")
+    assert "42%" in page.text
+
+
+def test_position_requires_login(client: TestClient) -> None:
+    assert client.get("/api/books/1/position").status_code == 401
+    assert (
+        client.put("/api/books/1/position", json={"cfi": "x", "fraction": 0.5}).status_code == 401
+    )
+
+
+def test_position_is_private(admin_client: TestClient, client: TestClient) -> None:
+    book_id = upload(admin_client, "a.epub", make_epub()).json()["id"]
+    admin_client.post("/admin/users", data={"username": "bob", "password": "bobpass1"})
+    admin_client.post("/logout")
+    client.post("/login", data={"username": "bob", "password": "bobpass1"})
+    assert client.get(f"/api/books/{book_id}/position").status_code == 404
+    assert (
+        client.put(f"/api/books/{book_id}/position", json={"cfi": "x", "fraction": 0.5}).status_code
+        == 404
+    )

@@ -6,10 +6,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse, Response
+from pydantic import BaseModel
 
 from ..deps import DB, AppSettings, AppStorage, CurrentUser
 from ..models import User
-from ..services import library, reading_stats
+from ..services import library, progress, reading_stats
 from ..services.library import BookEntry
 from ..services.metadata.base import parse_float
 from ..templating import render
@@ -136,6 +137,40 @@ def upload_book(
     return JSONResponse(
         {"id": book.id, "title": book.title, "url": f"/books/{book.id}"}, status_code=201
     )
+
+
+class PositionBody(BaseModel):
+    """Position reported by the foliate reader: a CFI and a 0–1 fraction."""
+
+    cfi: str
+    fraction: float
+
+
+@router.get("/api/books/{book_id}/position")
+def get_position(db: DB, user: CurrentUser, book_id: int) -> JSONResponse:
+    """Saved reading position for the browser reader, if any."""
+    entry = _entry_or_404(db, user, book_id)
+    record = progress.get_progress(db, user.id, entry.book.partial_md5)
+    if record is None:
+        return JSONResponse({"cfi": None, "percentage": None})
+    return JSONResponse({"cfi": record.progress, "percentage": record.percentage})
+
+
+@router.put("/api/books/{book_id}/position")
+def put_position(body: PositionBody, db: DB, user: CurrentUser, book_id: int) -> JSONResponse:
+    """Save the reader position. Foliate's 0–1 fraction becomes the record's percentage,
+    in the same units the KOReader sync protocol uses."""
+    entry = _entry_or_404(db, user, book_id)
+    record = progress.save_progress(
+        db,
+        user.id,
+        entry.book.partial_md5,
+        progress=body.cfi,
+        percentage=body.fraction,
+        device="web",
+        device_id="",
+    )
+    return JSONResponse({"cfi": record.progress, "percentage": record.percentage})
 
 
 @router.get("/books/{book_id}")

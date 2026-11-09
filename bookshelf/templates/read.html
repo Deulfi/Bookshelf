@@ -39,6 +39,8 @@
 <body>
     <header id="reader-header">
         <a href="/">{{ icon("arrow-left", 18) }} Library</a>
+        <button class="btn" onclick="goBack()" title="Previous page">{{ icon("arrow-left", 16) }}</button>
+        <button class="btn" onclick="goForward()" title="Next page">{{ icon("arrow-right", 16) }}</button>
         <span class="title">{{ book.title }}</span>
         <button class="btn" onclick="toggleSettings()">{{ icon("settings", 16) }} Settings</button>
     </header>
@@ -125,12 +127,48 @@
             document.body.style.background = settings.bgColor
         }
 
+        // Load the saved position: server first, localStorage as the offline fallback.
+        async function loadPosition() {
+            try {
+                const res = await fetch(`/api/books/${bookId}/position`)
+                if (res.ok) {
+                    const data = await res.json()
+                    if (data.cfi) return data.cfi
+                }
+            } catch {
+                // offline: fall through to localStorage
+            }
+            return localStorage.getItem(POSITION_KEY)
+        }
+
+        let remoteSaveTimer = null
+
         function savePosition() {
             const cfi = view.lastLocation?.cfi
-            if (cfi) localStorage.setItem(POSITION_KEY, cfi)
+            if (!cfi) return
+            localStorage.setItem(POSITION_KEY, cfi)
+            if (remoteSaveTimer) clearTimeout(remoteSaveTimer)
+            remoteSaveTimer = setTimeout(saveRemotePosition, 5000)
+        }
+
+        async function saveRemotePosition() {
+            remoteSaveTimer = null
+            const loc = view.lastLocation
+            if (!loc?.cfi) return
+            try {
+                await fetch(`/api/books/${bookId}/position`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cfi: loc.cfi, fraction: loc.fraction ?? 0 }),
+                })
+            } catch {
+                // offline: the position is already in localStorage
+            }
         }
 
         window.toggleSettings = () => document.getElementById('settings-panel').classList.toggle('visible')
+        window.goBack = () => view.prev()
+        window.goForward = () => view.next()
 
         window.updateSetting = (key, value) => {
             settings[key] = key === 'fontSize' ? Number(value) : value
@@ -149,7 +187,7 @@
         await view.open('{{ file_url }}')
         view.renderer.setAttribute('flow', 'scrolled')
         applyStyles()
-        await view.init({ lastLocation: localStorage.getItem(POSITION_KEY), showTextStart: true })
+        await view.init({ lastLocation: await loadPosition(), showTextStart: true })
 
         // persist reading position as it moves
         view.addEventListener('relocate', savePosition)
