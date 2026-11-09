@@ -55,6 +55,32 @@
     {% endcall %}
   </section>
 
+  {% if user.is_admin and scanner.enabled %}
+  <section class="card" id="library-folder">
+    <h2>{{ icon('sync', 18) }} Library folder</h2>
+    <p class="card-sub">Bookshelf scans the library folder on startup. New files are added; entries whose file is gone are removed.</p>
+    <p class="small muted">
+      {% if scanner.running %}Scanning…{% elif scanner.last_result %}
+      Last scan {{ scanner.last_result.finished_at.strftime('%Y-%m-%d %H:%M') }}:
+      {{ scanner.last_result.imported }} added, {{ scanner.last_result.removed }} removed{% if scanner.last_result.error %} · failed: {{ scanner.last_result.error }}{% endif %}.
+      {% else %}No scan has finished yet.{% endif %}
+    </p>
+    <div class="actions">
+      <form method="post" action="/settings/scan">
+        <button class="btn btn-primary" type="submit"{% if scanner.running %} disabled{% endif %}>{{ icon('sync', 18) }} Scan now</button>
+      </form>
+      <form method="post" action="/settings/scan-interval" class="form">
+        <label class="field-label" for="scan-interval">Scan automatically</label>
+        <select id="scan-interval" name="minutes" onchange="this.form.submit()">
+          {% for minutes, label in scan_choices %}
+          <option value="{{ minutes }}"{% if minutes == scanner.interval_minutes %} selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </form>
+    </div>
+  </section>
+
+  {% endif %}
   <section class="card" id="sync-books">
     <h2>{{ icon('tablet', 18) }} Books on your e-reader</h2>
     <p class="card-sub">KOReader can download books automatically into a folder on your e-reader. Choose what it should keep in sync: your whole library, or only a selection.</p>

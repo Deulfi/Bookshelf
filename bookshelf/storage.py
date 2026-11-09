@@ -13,7 +13,6 @@ library root the file lives in (ingest_dir or books_dir).
 
 from __future__ import annotations
 
-import contextlib
 import re
 import shutil
 import uuid
@@ -25,7 +24,7 @@ from sqlalchemy.orm import Session
 from .models import Book
 
 # Characters that cannot appear in a Windows file or directory name.
-_INVALID_SEGMENT_CHARS = re.compile(r"[\\/:*?\"<>|]")
+_INVALID_SEGMENT_CHARS = re.compile(r"[\\/:*?\"<>|\x00-\x1f]")
 
 
 class Storage:
@@ -60,7 +59,10 @@ class Storage:
     @staticmethod
     def _clean_segment(value: str | None, limit: int = 100) -> str:
         value = _INVALID_SEGMENT_CHARS.sub(" ", value or "")
-        return " ".join(value.split())[:limit].strip()
+        value = " ".join(value.split())[:limit]
+        # Windows/SMB shares reject names ending in a dot or space; "." and ".." must never
+        # survive, or an author called ".." would escape the library folder.
+        return value.strip(" .")
 
     def schema_relative_path(
         self, author: str | None, series: str | None, title: str | None, fmt: str
@@ -72,7 +74,25 @@ class Storage:
     def new_temp_path(self) -> Path:
         return self.tmp_dir / uuid.uuid4().hex
 
+    def unique_relative(self, root: Path, relative: str, own: Path | None = None) -> str:
+        """``relative`` or, if that name is taken, "Name (2).ext", "Name (3).ext", ...
+
+        ``own`` is the file being renamed; it does not count as a collision with itself.
+        """
+        candidate = Path(relative)
+        number = 1
+        while True:
+            target = root / candidate
+            if not target.exists() or (own is not None and _same_file(target, own)):
+                return candidate.as_posix()
+            number += 1
+            candidate = Path(relative).with_name(
+                f"{Path(relative).stem} ({number}){Path(relative).suffix}"
+            )
+
     def store_book(self, source: Path, root: Path, relative: str) -> str:
+        """Copy a temp file into ``root`` without overwriting; returns the path used."""
+        relative = self.unique_relative(root, relative)
         target = root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
@@ -82,34 +102,41 @@ class Storage:
         located = self._locate(book)
         return located[1] if located else None
 
-    def move_book(self, book: Book, relative: str) -> bool:
+    def move_book(self, book: Book, relative: str) -> str | None:
+        """Move a book to ``relative`` below its library root; returns the final path or None."""
         located = self._locate(book)
         if located is None:
-            return False
+            return None
         root, source = located
+        relative = self.unique_relative(root, relative, own=source)
         target = root / relative
-        if target.exists() and target.resolve() != source.resolve():
-            return False
+        if _same_file(target, source):
+            return relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(source), str(target))
-        return True
+        self.prune_empty_parents(source.parent, root)
+        return relative
 
-    def cleanup_old_covers_and_dirs(self, db: Session) -> None:
+    def prune_empty_parents(self, directory: Path, root: Path) -> None:
+        """Remove ``directory`` and its parents while they are empty, never ``root`` itself."""
+        root = root.resolve()
+        directory = directory.resolve()
+        while directory != root and root in directory.parents:
+            try:
+                directory.rmdir()  # fails (and we stop) as soon as a directory is not empty
+            except OSError:
+                return
+            directory = directory.parent
+
+    def remove_orphan_covers(self, db: Session) -> int:
+        """Delete cover files whose book no longer exists (one query, not one per cover)."""
+        live = set(db.scalars(select(Book.id)))
+        removed = 0
         for cover in self.covers_dir.glob("*.jpg"):
-            if self.find_book_for_cover(db, int(cover.stem)) is None:
+            if not cover.stem.isdigit() or int(cover.stem) not in live:
                 cover.unlink(missing_ok=True)
-
-        for root in self.library_roots():
-            if not root.is_dir():
-                continue
-            # Deepest first: a parent emptied by its child's removal is pruned in the same pass.
-            for path in sorted(root.rglob("*"), key=lambda p: len(p.parts), reverse=True):
-                if path.is_dir() and not any(path.iterdir()):
-                    with contextlib.suppress(OSError):
-                        path.rmdir()
-
-    def find_book_for_cover(self, db: Session, book_id: int) -> Book | None:
-        return db.scalar(select(Book).where(Book.id == book_id))
+                removed += 1
+        return removed
 
     def library_roots(self) -> tuple[Path, ...]:
         if self.ingest_dir is not None:
@@ -120,9 +147,11 @@ class Storage:
         return self.covers_dir / f"{book_id}.jpg"
 
     def delete_book_files(self, book: Book) -> None:
-        path = self.find_book_file(book)
-        if path is not None:
+        located = self._locate(book)
+        if located is not None:
+            root, path = located
             path.unlink(missing_ok=True)
+            self.prune_empty_parents(path.parent, root)
         self.cover_path(book.id).unlink(missing_ok=True)
 
     def user_files_dir(self, user_id: int) -> Path:
@@ -131,3 +160,10 @@ class Storage:
     def delete_user_dir(self, user_id: int) -> None:
         shutil.rmtree(self.books_dir / str(user_id), ignore_errors=True)
         shutil.rmtree(self.user_files_dir(user_id), ignore_errors=True)
+
+
+def _same_file(a: Path, b: Path) -> bool:
+    try:
+        return a.resolve() == b.resolve()
+    except OSError:
+        return False

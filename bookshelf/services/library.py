@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -25,6 +26,8 @@ SORTS = ("recent", "title", "author", "last_read")
 FINISHED_THRESHOLD = 0.98
 CONTINUE_READING_LIMIT = 8
 _COPY_CHUNK = 1024 * 1024
+# Files modified more recently than this are still being written (sync tools, copies).
+SETTLE_SECONDS = 10
 
 
 class LibraryError(Exception):
@@ -143,6 +146,12 @@ def import_from_disk(db: Session, storage: Storage, user: User, path: Path) -> B
     document_hash = partial_md5(path)
     existing = db.scalar(select(Book).where(Book.partial_md5 == document_hash))
     if existing is not None:
+        relative = path.relative_to(storage.ingest_dir).as_posix()
+        if existing.file_path != relative and storage.find_book_file(existing) is None:
+            # The file was moved or renamed outside Bookshelf: follow it instead of leaving
+            # a broken entry behind.
+            existing.file_path = relative
+            db.commit()
         raise DuplicateBookError(existing)
 
     metadata = extract_metadata(path, fmt, path.name)
@@ -173,24 +182,28 @@ def import_from_disk(db: Session, storage: Storage, user: User, path: Path) -> B
 def sync_library(
     db: Session, storage: Storage, user: User, log: Callable[[str], None] | None = None
 ) -> int:
-    """Scan the library folder for new books and register them in place."""
+    """Register new books found in the library folder and drop entries whose file is gone."""
     if storage.ingest_dir is None or not storage.ingest_dir.is_dir():
         return 0
-    # ponytail: path pre-filter avoids re-hashing known files; a books_dir path that
-    # collides with an ingest path would be skipped (negligible in practice).
     known_paths = set(db.scalars(select(Book.file_path)))
     imported = 0
+    seen_files = 0
+    now = time.time()
     for path in sorted(storage.ingest_dir.rglob("*")):
         if not path.is_file() or detect_format(path.name) is None:
             continue
+        seen_files += 1
         relative = path.relative_to(storage.ingest_dir).as_posix()
         if relative in known_paths:
             continue
         try:
+            if now - path.stat().st_mtime < SETTLE_SECONDS:
+                continue  # still being written; picked up on the next scan
             book = import_from_disk(db, storage, user, path)
         except DuplicateBookError:
             continue
-        except LibraryError as error:
+        except (LibraryError, OSError) as error:
+            db.rollback()
             if log:
                 log(f"skipped {relative}: {error}")
             continue
@@ -198,9 +211,34 @@ def sync_library(
         known_paths.add(relative)
         if log:
             log(f"imported {relative} as #{book.id}")
-    if imported:
-        storage.cleanup_old_covers_and_dirs(db)
+    # An empty folder usually means an unmounted share, not a deleted library: never prune then.
+    if seen_files:
+        prune_missing(db, storage, log=log)
     return imported
+
+
+def prune_missing(db: Session, storage: Storage, log: Callable[[str], None] | None = None) -> int:
+    """Delete database entries (and covers) whose book file no longer exists on disk."""
+    if storage.ingest_dir is not None and not _has_books(storage.ingest_dir):
+        return 0  # library folder missing or empty: could be an unmounted share
+    removed = 0
+    for book in db.scalars(select(Book)).all():
+        if storage.find_book_file(book) is None:
+            if log:
+                log(f"removed #{book.id} “{book.title}”: file is gone ({book.file_path})")
+            storage.cover_path(book.id).unlink(missing_ok=True)
+            db.delete(book)
+            removed += 1
+    if removed:
+        db.commit()
+    storage.remove_orphan_covers(db)
+    return removed
+
+
+def _has_books(folder: Path) -> bool:
+    if not folder.is_dir():
+        return False
+    return any(p.is_file() and detect_format(p.name) is not None for p in folder.rglob("*"))
 
 
 def _copy_limited(source: BinaryIO, target: Path, max_bytes: int) -> int:
@@ -357,12 +395,23 @@ def update_metadata(db: Session, storage: Storage, book: Book, **changes: object
             setattr(book, field, value or None)
     if "series_index" in changes:
         book.series_index = changes["series_index"]  # type: ignore[assignment]
-    if storage.ingest_dir is not None and (storage.ingest_dir / book.file_path).is_file():
-        relative = storage.schema_relative_path(book.author, book.series, book.title, book.format)
-        if relative != book.file_path and storage.move_book(book, relative):
-            book.file_path = relative
-    db.commit()
-    storage.cleanup_old_covers_and_dirs(db)
+    old_path = book.file_path
+    final: str | None = None
+    if storage.ingest_dir is not None and (storage.ingest_dir / old_path).is_file():
+        wanted = storage.schema_relative_path(book.author, book.series, book.title, book.format)
+        if wanted != old_path:
+            final = storage.move_book(book, wanted)
+            if final is not None:
+                book.file_path = final
+    try:
+        db.commit()
+    except BaseException:
+        db.rollback()
+        if final is not None and final != old_path:
+            book.file_path = final  # in memory only: lets move_book find the moved file
+            storage.move_book(book, old_path)
+            db.rollback()
+        raise
 
 
 def replace_cover(db: Session, storage: Storage, book: Book, data: bytes) -> None:
@@ -386,4 +435,3 @@ def delete_book(db: Session, storage: Storage, book: Book) -> None:
     storage.delete_book_files(book)
     db.delete(book)
     db.commit()
-    storage.cleanup_old_covers_and_dirs(db)

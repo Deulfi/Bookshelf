@@ -32,8 +32,10 @@
     </div>
 
     <div class="actions">
-      <a class="btn btn-primary" href="/read/{{ book.id }}" target="_blank">{{ icon('book', 18) }} Read in Browser</a>
-      <a class="btn" href="/books/{{ book.id }}/file" download>{{ icon('download', 18) }} Download</a>
+      {% if book.format in ('epub', 'mobi', 'azw3', 'fb2', 'cbz') %}
+      <a class="btn btn-primary" href="/read/{{ book.id }}">{{ icon('book', 18) }} Read in Browser</a>
+      {% endif %}
+      <a class="btn{% if book.format not in ('epub', 'mobi', 'azw3', 'fb2', 'cbz') %} btn-primary{% endif %}" href="/books/{{ book.id }}/file" download>{{ icon('download', 18) }} Download</a>
       <form method="post" action="/books/{{ book.id }}/device">
         {% if book.device_sync_at %}
         <input type="hidden" name="enabled" value="false">

@@ -17,8 +17,8 @@ from ._files import book_file_response, cover_response
 
 router = APIRouter()
 
-router = APIRouter()
-
+# Formats foliate-js can open without extra libraries (no PDF/DjVu/etc.).
+READABLE_FORMATS = {"epub", "mobi", "azw3", "fb2", "cbz"}
 PAGE_SIZE = 60  # books per page; more are loaded while scrolling
 
 
@@ -29,13 +29,12 @@ def _entry_or_404(db: DB, user: User, book_id: int) -> BookEntry:
     return entry
 
 
-
 @router.get("/read/{book_id}")
-def read_book(
-    request: Request, db: DB, user: CurrentUser, storage: AppStorage, book_id: int
-) -> Response:
-    """Read EPUB in browser using foliate-js."""
+def read_book(request: Request, db: DB, user: CurrentUser, book_id: int) -> Response:
+    """Read a book in the browser using foliate-js."""
     entry = _entry_or_404(db, user, book_id)
+    if entry.book.format not in READABLE_FORMATS:
+        raise HTTPException(status_code=404, detail="This format can't be read in the browser.")
     return render(
         request,
         "read.html",
@@ -45,6 +44,7 @@ def read_book(
         book=entry.book,
         file_url=f"/books/{book_id}/file",
     )
+
 
 @router.get("/")
 def library_page(

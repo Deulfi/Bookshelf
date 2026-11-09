@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import threading
-import time
 from pathlib import Path
 from urllib.parse import quote
 
@@ -11,16 +9,15 @@ from fastapi import FastAPI, Request
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import __version__
 from .config import Settings
 from .db import init_database
 from .deps import LoginRequired
-from .models import User
 from .routers import account, admin, auth, kosync, library, opds, stats, webdav
 from .services import library as library_service
+from .services.scanner import LibraryScanner
 from .storage import Storage
 from .templating import render
 
@@ -45,7 +42,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_exception_handler(kosync.KosyncError, kosync.kosync_error_handler)
     app.add_exception_handler(LoginRequired, _login_required_handler)
     app.add_exception_handler(StarletteHTTPException, _http_error_handler)
-    start_ingest_worker(app, settings, storage)
+    scanner = LibraryScanner(app.state.sessionmaker, storage, settings.data_dir / "scan.json")
+    app.state.scanner = scanner
+    if scanner.enabled:
+        scanner.start()  # scans once now, then on the interval chosen in the settings
+    else:
+        _prune_on_startup(app, storage)  # still drop entries whose files are gone
     return app
 
 
@@ -76,47 +78,12 @@ async def _http_error_handler(request: Request, exc: StarletteHTTPException) -> 
     return await http_exception_handler(request, exc)
 
 
-# --- Background ingest worker ---------------------------------------------------------------
-
-
-class IngestWorker:
-    """Background thread that keeps the library folder in sync with the database."""
-
-    def __init__(self, app: FastAPI, storage: Storage) -> None:
-        self.app = app
-        self.storage = storage
-        self.interval = 60.0
-        self._thread: threading.Thread | None = None
-
-    def _log(self, message: str) -> None:
-        print(f"[ingest] {message}", flush=True)
-
-    def _sync_once(self) -> None:
-        with self.app.state.sessionmaker() as db:
-            user = db.scalar(select(User).order_by(User.id).limit(1))
-            if user is None:
-                return
-            try:
-                count = library_service.sync_library(db, self.storage, user, log=self._log)
-            except Exception as error:  # the worker must never take the server down
-                self._log(f"error: {error}")
-                return
-            if count:
-                self._log(f"synced {count} new book(s)")
-
-    def _loop(self) -> None:
-        while True:
-            self._sync_once()
-            time.sleep(self.interval)
-
-    def start(self) -> None:
-        if self._thread is not None:
-            return
-        self._thread = threading.Thread(target=self._loop, daemon=True)
-        self._thread.start()
-
-
-def start_ingest_worker(app: FastAPI, settings: Settings, storage: Storage) -> None:
-    if not settings.ingest_dir:
-        return  # feature disabled by default
-    IngestWorker(app, storage).start()
+def _prune_on_startup(app: FastAPI, storage: Storage) -> None:
+    """Drop entries whose files are gone, e.g. after starting without the library folder."""
+    try:
+        with app.state.sessionmaker() as db:
+            library_service.prune_missing(
+                db, storage, log=lambda m: print(f"[scan] {m}", flush=True)
+            )
+    except Exception as error:
+        print(f"[scan] startup cleanup failed: {error}", flush=True)
