@@ -235,6 +235,36 @@
     event.preventDefault();
     dragDepth = 0;
     overlay.hidden = true;
-    enqueue(event.dataTransfer.files);
+    collectDropped(event.dataTransfer).then(enqueue);
   });
+
+  /* A dropped folder shows up as a zero-byte "file" that never uploads, so walk folders and
+     pick out the books inside. Entries must be read synchronously, before the first await. */
+  const BOOK_EXTENSIONS = new Set([
+    "epub", "pdf", "mobi", "azw3", "fb2", "cbz", "cbr", "djvu", "txt", "rtf", "html", "docx", "chm",
+  ]);
+  const isBook = (file) => BOOK_EXTENSIONS.has(file.name.split(".").pop().toLowerCase());
+
+  async function collectDropped(dataTransfer) {
+    const entries = Array.from(dataTransfer.items || [])
+      .map((item) => item.webkitGetAsEntry?.())
+      .filter(Boolean);
+    if (!entries.length) return Array.from(dataTransfer.files);
+    const files = [];
+    const walk = async (entry) => {
+      if (entry.isFile) {
+        const file = await new Promise((resolve, reject) => entry.file(resolve, reject));
+        if (isBook(file)) files.push(file);
+      } else if (entry.isDirectory) {
+        const reader = entry.createReader();
+        let batch;
+        do {
+          batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+          for (const child of batch) await walk(child);
+        } while (batch.length);
+      }
+    };
+    for (const entry of entries) await walk(entry);
+    return files;
+  }
 })();
