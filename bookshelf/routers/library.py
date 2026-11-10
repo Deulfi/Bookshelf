@@ -242,8 +242,10 @@ def delete_book(db: DB, user: CurrentUser, storage: AppStorage, book_id: int) ->
 
 
 @router.get("/books/{book_id}/file")
-def download_book(db: DB, user: CurrentUser, storage: AppStorage, book_id: int) -> Response:
-    return book_file_response(storage, _entry_or_404(db, user, book_id).book)
+def download_book(
+    request: Request, db: DB, user: CurrentUser, storage: AppStorage, book_id: int
+) -> Response:
+    return book_file_response(storage, _entry_or_404(db, user, book_id).book, request)
 
 
 @router.get("/books/{book_id}/cover")

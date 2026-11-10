@@ -70,6 +70,10 @@ scripts/dev_seed.py  demo data for local development
   library search form and `partials/library.html`) and keep `app.js` for small enhancements only.
   No build step and no frameworks. Use the CSS tokens in `:root`, and check light and dark mode
   and phone widths. The UI language is English.
+- **Static files.** Always link them with `static("path")`: the `?v=<content hash>` it adds lets
+  browsers cache the file for good (`VersionedStaticFiles` in `main.py`). Reader and foliate
+  modules get the same through the import map (`reader_import_map`). Hashes are computed once
+  per process, so restart the dev server after editing JS or CSS.
 - **Forms.** Return status 422 and re-render the page with an `error` when validation fails.
   Use POST, then redirect (303) when the action succeeded.
 - **Style.** Python 3.12+, type hints, `from __future__ import annotations`, ruff (line length 100).

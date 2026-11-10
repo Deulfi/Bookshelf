@@ -4,6 +4,15 @@ A lean, self-hosted e-book library with **KOReader progress sync** and an **OPDS
 Upload your books, read them on any KOReader device, and keep your reading position in sync.
 Everything runs in one small Docker container with a single SQLite database.
 
+> **This is a fork.** It is an opinionated fork of
+> [Bookshelf by Hannes Thöne](https://github.com/hthoene/Bookshelf). It keeps the original's small
+> footprint and adds three things: a configurable **web reader**, **library folders** on disk
+> (`Author/Series/Title`, with scanning) and **reading positions shared** between the web reader,
+> KOReader and Readest. It is shaped by one way of reading (long web novels, scroll mode) and does
+> not try to be a complete library manager. If you want the lean original, use upstream. If you
+> want a full-featured library with audiobooks, annotations and Kobo sync, look at
+> [BookOrbit](https://github.com/bookorbit/bookorbit).
+
 ![Bookshelf library view](docs/screenshots/library-light.png)
 
 <table>
@@ -27,7 +36,10 @@ Everything runs in one small Docker container with a single SQLite database.
 
 ## Features
 
-- **Simple uploads.** Drag and drop files anywhere on the page, or pick them. Duplicates are detected.
+- **Simple uploads.** Drag and drop files or whole folders anywhere on the page, or pick them.
+  Duplicates are detected.
+- **Library folders.** Books are stored as `Author/Series/Title.ext`. Copy files into the folder
+  yourself, or point Bookshelf at an existing one, and a scan adds them.
 - **Automatic metadata.** Title, author, series, description and cover are read from EPUB, FB2, CBZ
   (ComicInfo) and PDF files. Other formats fall back to `Author - Title.ext` file names.
 - **KOReader progress sync.** Built-in server that is compatible with KOReader's *Progress sync* plugin.
@@ -39,8 +51,9 @@ Everything runs in one small Docker container with a single SQLite database.
   total reading time, streaks, a reading calendar, time per book and an estimate of the time left.
 - **Read in the browser.** EPUB, MOBI, AZW3, FB2 and CBZ open in a built-in reader (foliate-js)
   with scroll or page mode, auto-hiding bars, themes and font settings. In scroll mode it moves on
-  to the next chapter when you keep scrolling. Bars, themes, fonts and settings are configurable
-  with JSON (see [Web reader](#web-reader)).
+  to the next chapter when you keep scrolling. It continues where KOReader or Readest stopped, and
+  the other way round. Bars are arranged by drag and drop; themes, fonts and settings are
+  configurable with JSON, and bar elements can be added as plugins (see [Web reader](#web-reader)).
 - **Multiple users.** Every user has a private library. Admins manage accounts.
 - **Clean, responsive UI.** Works on phones, tablets and desktops, in light and dark mode.
   No build step and no JavaScript framework.
@@ -50,7 +63,7 @@ Supported formats: EPUB, PDF, MOBI, AZW3, FB2, CBZ, CBR, DJVU, TXT, RTF, HTML, D
 ## Quick start (Docker)
 
 ```bash
-git clone https://github.com/hthoene/Bookshelf.git
+git clone https://github.com/Deulfi/Bookshelf.git
 cd Bookshelf
 cp .env.example .env    # optional: adjust port, IP and other settings
 docker compose up -d
@@ -107,6 +120,10 @@ The *Settings* page in Bookshelf shows the exact addresses to use.
 **Progress sync.** Open a book, then go to *Tools → Progress sync → Custom sync server* and enter
 your Bookshelf address (for example `http://192.168.1.10:8080`). Then choose *Login* and use your
 Bookshelf username and password. Keep the default document matching (*Binary*).
+
+**Readest and other apps.** Apps that support KOReader's progress sync use the same address and
+login; in Readest, look for *KOReader Sync* in a book's menu. Positions are shared with the
+[web reader](#web-reader) too.
 
 **OPDS catalog.** In the file browser, open *Search → OPDS catalog*, tap **+** and add
 `http://<your-server>:8080/opds` with your Bookshelf username and password.
@@ -263,10 +280,19 @@ To regenerate the screenshots in `docs/screenshots/`, see `scripts/screenshots.p
 
 ## Tech stack
 
-FastAPI · SQLAlchemy + Alembic · SQLite · Jinja2 · htmx · plain CSS and JavaScript
+FastAPI · SQLAlchemy + Alembic · SQLite · Jinja2 · htmx · foliate-js · plain CSS and JavaScript
 
 ## Acknowledgements
 
+- [Bookshelf](https://github.com/hthoene/Bookshelf) by Hannes Thöne, the project this fork is
+  built on. The library, KOReader sync, OPDS, statistics and the design are his work.
+- [foliate-js](https://github.com/johnfactotum/foliate-js) (MIT License) renders the books in the
+  web reader. It is bundled in `bookshelf/static/js/foliate/` together with
+  [zip.js](https://github.com/gildas-lormeau/zip.js) (BSD 3-Clause) and
+  [fflate](https://github.com/101arrowz/fflate) (MIT); their licences are in
+  [`LICENSE.txt`](bookshelf/static/js/foliate/LICENSE.txt) in that folder.
+- [Readest](https://github.com/readest/readest), whose way of storing positions on a KOReader sync
+  server the web reader follows, and whose sync conflict prompt inspired the one here.
 - [KOReader](https://github.com/koreader/koreader) and its
   [sync server](https://github.com/koreader/koreader-sync-server), whose protocol Bookshelf implements.
 - [htmx](https://htmx.org) (BSD Zero Clause License), bundled in `bookshelf/static/js/`.

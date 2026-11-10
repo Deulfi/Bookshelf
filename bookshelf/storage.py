@@ -61,8 +61,6 @@ class Storage:
             return self.ingest_dir
         return self.books_dir / str(user_id)
 
-    upload_root = library_root
-
     @staticmethod
     def _clean_segment(value: str | None, limit: int = 100) -> str:
         value = _INVALID_SEGMENT_CHARS.sub(" ", value or "")

@@ -10,6 +10,8 @@ from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.gzip import GZipMiddleware
+from starlette.types import Scope
 
 from . import __version__
 from .config import Settings
@@ -23,6 +25,17 @@ from .templating import render
 STATIC_DIR = Path(__file__).parent / "static"
 
 
+class VersionedStaticFiles(StaticFiles):
+    """Static files. URLs with ``?v=<content hash>`` (see ``templating.static_url``) never change
+    their content, so browsers may keep them without asking again."""
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        response = await super().get_response(path, scope)
+        if response.status_code == 200 and b"v=" in scope.get("query_string", b""):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
@@ -34,7 +47,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.storage = storage
     app.state.sessionmaker = init_database(settings.database_url)
 
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    static = VersionedStaticFiles(directory=STATIC_DIR)
+    app.mount("/static", GZipMiddleware(static, minimum_size=1024), name="static")
     for module in (auth, library, reader, stats, account, admin, kosync, opds, webdav):
         app.include_router(module.router)
 

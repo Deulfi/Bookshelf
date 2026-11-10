@@ -343,3 +343,37 @@ def test_settings_page_loads_the_bar_editor(admin_client: TestClient) -> None:
     assert 'id="layout-editor"' in page
     assert "js/reader-layout.js" in page
     assert '"/static/js/reader/elements/index.js"' in page  # import map entry
+
+
+def test_static_assets_are_cacheable_and_compressed(admin_client: TestClient) -> None:
+    versioned = admin_client.get("/static/css/app.css?v=abc", headers={"Accept-Encoding": "gzip"})
+    assert versioned.status_code == 200
+    assert "immutable" in versioned.headers["cache-control"]
+    assert versioned.headers["content-encoding"] == "gzip"
+    assert "immutable" not in admin_client.get("/static/css/app.css").headers.get(
+        "cache-control", ""
+    )
+
+
+def test_import_map_versions_reader_and_foliate_modules(admin_client: TestClient) -> None:
+    book_id = upload(admin_client, "c.epub", make_chapter_epub()).json()["id"]
+    page = admin_client.get(f"/read/{book_id}").text
+    assert '"/static/js/reader/engine.js": "/static/js/reader/engine.js?v=' in page
+    assert '"/static/js/foliate/view.js": "/static/js/foliate/view.js?v=' in page
+    assert '"/static/js/foliate/vendor/zip.js": "/static/js/foliate/vendor/zip.js?v=' in page
+
+
+def test_book_file_is_revalidated_not_downloaded_again(admin_client: TestClient) -> None:
+    book_id = upload(admin_client, "c.epub", make_chapter_epub()).json()["id"]
+    first = admin_client.get(f"/books/{book_id}/file")
+    assert first.status_code == 200
+    assert first.headers["cache-control"] == "private, no-cache"
+    again = admin_client.get(
+        f"/books/{book_id}/file", headers={"If-None-Match": first.headers["etag"]}
+    )
+    assert again.status_code == 304
+    assert again.content == b""
+    assert (
+        admin_client.get(f"/books/{book_id}/file", headers={"If-None-Match": '"other"'}).status_code
+        == 200
+    )

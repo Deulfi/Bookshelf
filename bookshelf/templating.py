@@ -115,11 +115,16 @@ def static_url(path: str) -> str:
     return f"/static/{path}?v={_static_version(path)}"
 
 
+@lru_cache(maxsize=1)
 def reader_import_map() -> dict[str, dict[str, str]]:
-    """Map every browser reader module to its content-hashed URL, so modules imported by other
-    modules are fetched again after an update, just like the entry point."""
-    root = STATIC_DIR / "js" / "reader"
-    paths = sorted(p.relative_to(STATIC_DIR).as_posix() for p in root.rglob("*.js"))
+    """Map every browser reader module (ours and the vendored foliate-js ones they import) to
+    its content-hashed URL. Modules imported by other modules are then cached for good and
+    still fetched again after an update, just like the entry point."""
+    paths = sorted(
+        p.relative_to(STATIC_DIR).as_posix()
+        for folder in ("reader", "foliate")
+        for p in (STATIC_DIR / "js" / folder).rglob("*.js")
+    )
     return {"imports": {f"/static/{path}": static_url(path) for path in paths}}
 
 

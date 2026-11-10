@@ -238,7 +238,9 @@ def reorganize_legacy_files(
 ) -> int:
     """Move uploads stored under random names (older versions) to Author/Series/Title.ext."""
     moved = 0
-    for book in db.scalars(select(Book).where(Book.user_id == user.id)).all():
+    # Legacy files sit directly in the library root, so only path-less entries are candidates.
+    candidates = select(Book).where(Book.user_id == user.id, ~Book.file_path.contains("/"))
+    for book in db.scalars(candidates).all():
         path = PurePath(book.file_path)
         if len(path.parts) != 1 or not _LEGACY_NAME.match(path.stem):
             continue
@@ -264,15 +266,25 @@ def prune_missing(
     only ``user``'s books when given."""
     if user is None and storage.ingest_dir is not None and not _has_books(storage.ingest_dir):
         return 0  # library folder missing or empty: could be an unmounted share
-    statement = select(Book) if user is None else select(Book).where(Book.user_id == user.id)
-    removed = 0
-    for book in db.scalars(statement).all():
-        if storage.find_book_file(book) is None:
+    # Libraries can be large: stream only the columns needed to find the file (plain rows, no
+    # ORM objects), then delete the few missing entries by id.
+    statement = select(Book.id, Book.user_id, Book.title, Book.file_path)
+    if user is not None:
+        statement = statement.where(Book.user_id == user.id)
+    missing: list[int] = []
+    for row in db.execute(statement.execution_options(yield_per=500)):
+        if storage.find_book_file(row) is None:  # only reads user_id and file_path
             if log:
-                log(f"removed #{book.id} “{book.title}”: file is gone ({book.file_path})")
-            storage.cover_path(book.id).unlink(missing_ok=True)
-            db.delete(book)
-            removed += 1
+                log(f"removed #{row.id} “{row.title}”: file is gone ({row.file_path})")
+            missing.append(row.id)
+    removed = 0
+    for book_id in missing:
+        book = db.get(Book, book_id)
+        if book is None:
+            continue
+        storage.cover_path(book.id).unlink(missing_ok=True)
+        db.delete(book)
+        removed += 1
     if removed:
         db.commit()
     storage.remove_orphan_covers(db)
