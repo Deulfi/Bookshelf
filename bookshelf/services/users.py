@@ -96,6 +96,7 @@ def delete_user(db: Session, storage: Storage, user: User) -> None:
     for book in user.books:
         storage.delete_book_files(book)
     storage.delete_user_dir(user.id)
+    storage.user_reader_config(user.id, user.username).unlink(missing_ok=True)
     db.delete(user)
     db.commit()
 

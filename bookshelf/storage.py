@@ -1,14 +1,15 @@
 """File storage layout below the data directory.
 
-<data_dir>/books/<user_id>/...   uploaded book files (legacy)
+<data_dir>/books/<user_id>/...   each user's library folder (Author/Series/Title.ext)
 <data_dir>/covers/<book_id>.jpg  cover thumbnails
 <data_dir>/tmp/                 in-progress uploads
 <data_dir>/files/<user_id>/     WebDAV files (e.g. KOReader statistics)
+<data_dir>/reader/              optional web reader overrides (*.json) and fonts/
 
-When ingest_dir is set (the user's library folder, e.g. a NAS share), new
-books are stored there under <Author>/<Series>/<Title>.<ext> and are never
-copied or renamed on import. Book.file_path is always relative to the
-library root the file lives in (ingest_dir or books_dir).
+Books are stored as <Author>/<Series>/<Title>.<ext> below the user's library root:
+books/<user_id>/ by default, or the shared ingest_dir (e.g. a NAS share) when it is set.
+Files already in a library root are registered in place by a scan. Book.file_path is
+always relative to the library root the file lives in.
 """
 
 from __future__ import annotations
@@ -25,6 +26,8 @@ from .models import Book
 
 # Characters that cannot appear in a Windows file or directory name.
 _INVALID_SEGMENT_CHARS = re.compile(r"[\\/:*?\"<>|\x00-\x1f]")
+# Usernames as allowed by services/users.py; safe to use as a file name.
+_SAFE_FILE_NAME = re.compile(r"^[a-z0-9][a-z0-9._@-]{0,63}$")
 
 
 class Storage:
@@ -34,6 +37,7 @@ class Storage:
         self.covers_dir = root / "covers"
         self.tmp_dir = root / "tmp"
         self.files_dir = root / "files"
+        self.reader_dir = root / "reader"  # optional web reader config and fonts
         self.ingest_dir = ingest_dir
 
     def ensure_dirs(self) -> None:
@@ -51,10 +55,13 @@ class Storage:
             return root, path
         return None
 
-    def upload_root(self, user_id: int) -> Path:
+    def library_root(self, user_id: int) -> Path:
+        """Where a user's books live: the shared ingest folder, or ``books/<user_id>/``."""
         if self.ingest_dir is not None:
             return self.ingest_dir
         return self.books_dir / str(user_id)
+
+    upload_root = library_root
 
     @staticmethod
     def _clean_segment(value: str | None, limit: int = 100) -> str:
@@ -156,6 +163,12 @@ class Storage:
 
     def user_files_dir(self, user_id: int) -> Path:
         return self.files_dir / str(user_id)
+
+    def user_reader_config(self, user_id: int, username: str) -> Path:
+        """A user's web reader override file, named after the user (falls back to the id
+        for a name that is not a safe file name)."""
+        safe = bool(_SAFE_FILE_NAME.match(username))
+        return self.reader_dir / "users" / (f"{username}.json" if safe else f"user-{user_id}.json")
 
     def delete_user_dir(self, user_id: int) -> None:
         shutil.rmtree(self.books_dir / str(user_id), ignore_errors=True)

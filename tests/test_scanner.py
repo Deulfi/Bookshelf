@@ -79,5 +79,17 @@ def test_settings_page_shows_scan_card_and_button_works(app_client):
     assert response.status_code == 303
 
 
-def test_scan_card_hidden_without_library_folder(admin_client: TestClient):
-    assert "Scan now" not in admin_client.get("/settings").text
+def test_scan_card_covers_user_folders_without_ingest_dir(admin_client: TestClient):
+    page = admin_client.get("/settings").text
+    assert "Scan all folders now" in page
+    assert "data-scan-trigger" in admin_client.get("/").text
+
+
+def test_scan_button_is_for_admins_with_a_shared_folder(app_client):
+    client, _app = app_client
+    assert "data-scan-trigger" in client.get("/").text
+    client.post("/admin/users", data={"username": "bob", "password": "bobpass1"})
+    client.post("/logout")
+    client.post("/login", data={"username": "bob", "password": "bobpass1"})
+    assert "data-scan-trigger" not in client.get("/").text
+    assert client.post("/api/library/scan").status_code == 403

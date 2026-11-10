@@ -94,6 +94,20 @@ class Book(Base):
         return author
 
 
+class ReaderProfile(Base):
+    """Values chosen in the browser reader's settings panel (see ``services/reader_config.py``).
+    The user's configuration override is a file: ``<data_dir>/reader/users/<username>.json``."""
+
+    __tablename__ = "reader_profiles"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    # JSON object: the values chosen in the reader's settings panel (theme, font size, ...).
+    prefs: Mapped[str] = mapped_column(Text, default="{}")
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
 class ReadingProgress(Base):
     """Progress as reported by KOReader, keyed by its document hash (not by book id)."""
 

@@ -114,6 +114,15 @@ strong { font-weight: 650; }
 }
 .nav a:hover { color: var(--text); background: var(--surface-2); }
 .nav a.active { color: var(--text); background: var(--surface-2); }
+.btn-scan.is-busy .icon { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.toast {
+  position: fixed; left: 50%; bottom: 24px; z-index: 60; transform: translateX(-50%);
+  max-width: min(480px, calc(100vw - 32px)); padding: 10px 16px; border-radius: var(--radius-sm);
+  background: var(--text); color: var(--bg); font-size: 14px; box-shadow: var(--pop-shadow);
+}
+.toast-error { background: var(--danger); color: var(--on-accent); }
+@media (prefers-reduced-motion: reduce) { .btn-scan.is-busy .icon { animation: none; } }
 
 /* ---------- Buttons ---------- */
 
@@ -422,7 +431,21 @@ textarea.input { height: auto; min-height: 120px; padding: 10px 12px; line-heigh
   transition: border-color 0.15s;
 }
 .continue-card:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
-.continue-cover { width: 62px; flex: none; }
+.continue-cover { width: 62px; flex: none; align-self: flex-start; border-radius: 5px; }
+.continue-info { color: inherit; text-decoration: none; }
+/* the cover opens the reader; the round book icon says so on hover (always shown on touch) */
+.cover-read {
+  position: absolute; inset: 0; margin: auto;
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%;
+  background: rgb(0 0 0 / 0.62); color: #fff; box-shadow: 0 2px 10px rgb(0 0 0 / 0.35);
+  opacity: 0; transform: scale(0.85); transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.continue-cover:hover .cover-read, .continue-cover:focus-visible .cover-read { opacity: 1; transform: none; }
+.continue-cover:hover .cover, .continue-cover:focus-visible .cover { filter: brightness(0.8); }
+@media (hover: none) {
+  .cover-read { inset: auto 4px 4px auto; width: 26px; height: 26px; opacity: 0.9; transform: none; }
+  .cover-read svg { width: 15px; height: 15px; }
+}
 .continue-cover .ph-author { display: none; }
 .continue-info { display: flex; flex: 1; flex-direction: column; justify-content: center; gap: 5px; min-width: 0; }
 .continue-info .progress { margin-top: 6px; }
@@ -458,6 +481,9 @@ textarea.input { height: auto; min-height: 120px; padding: 10px 12px; line-heigh
 .progress-card p { display: flex; align-items: center; gap: 6px; }
 .progress-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
 .progress-head strong { font-size: 22px; font-weight: 700; }
+.progress-chapter { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 10px 0 0; font-size: 14px; }
+.progress-chapter-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.progress-chapter-count { flex: none; font-variant-numeric: tabular-nums; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .description { max-width: 68ch; margin-top: 32px; font-family: var(--font-serif); font-size: 17px; line-height: 1.7; }
 .description p + p { margin-top: 1em; }
@@ -616,7 +642,8 @@ code:not(.copy-value) { padding: 1px 6px; border-radius: 6px; background: var(--
 @media (max-width: 760px) {
   .container { padding: 18px 16px 96px; }
   .topbar-inner { padding: 8px 16px; gap: 6px; }
-  .nav span, .btn-upload span { display: none; }
+  .nav span, .btn-upload span, .btn-scan span { display: none; }
+  .btn-scan { width: 40px; padding: 0; }
   .nav a { padding: 9px; }
   .btn-upload { width: 40px; padding: 0; }
   .toolbar { flex-wrap: wrap; }
@@ -670,3 +697,60 @@ code:not(.copy-value) { padding: 1px 6px; border-radius: 6px; background: var(--
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
+
+/* ---------- Web reader bar editor (settings) ---------- */
+
+.layout-editor { display: grid; gap: 18px; margin-bottom: 16px; }
+.layout-editor h3 { font-size: 14px; margin-bottom: 8px; }
+.le-bar-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.le-strip, .le-palette {
+  list-style: none; margin: 0; padding: 8px; display: flex; flex-wrap: wrap; gap: 8px;
+  min-height: 56px; border: 1px dashed var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.le-palette { background: transparent; }
+.le-strip.is-target, .le-palette-wrap.is-target .le-palette { border-color: var(--accent); background: var(--accent-soft); }
+.le-empty { color: var(--muted); font-size: 13px; align-self: center; padding: 0 6px; }
+.le-chip {
+  display: inline-flex; align-items: center; gap: 2px; min-height: 38px; padding: 0 4px 0 0;
+  border: 1px solid var(--border); border-radius: 20px; background: var(--surface); font-size: 13.5px;
+  max-width: 100%;
+}
+.le-chip.is-open { border-color: var(--accent); }
+.le-chip.is-unknown { border-color: var(--danger); color: var(--danger); }
+.le-chip.is-spacer { border-style: dashed; color: var(--muted); }
+.le-chip.is-used { opacity: 0.45; }
+.le-chip.is-dragging { opacity: 0.3; }
+.le-handle {
+  padding: 8px 6px 8px 12px; cursor: grab; user-select: none; touch-action: none;
+  display: inline-flex; align-items: center; gap: 6px; min-width: 0;
+}
+.le-chip.is-used .le-handle { cursor: default; }
+.le-badge { font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.le-chip-tools { display: inline-flex; align-items: center; }
+.le-tool {
+  width: 28px; height: 28px; border: 0; border-radius: 50%; background: transparent; cursor: pointer;
+  color: var(--muted); font-size: 16px; line-height: 1; display: inline-grid; place-items: center;
+}
+.le-tool:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
+.le-tool:disabled { opacity: 0.3; cursor: default; }
+.le-remove:hover:not(:disabled) { color: var(--danger); background: var(--danger-soft); }
+.le-placeholder { width: 48px; min-height: 38px; border-radius: 999px; border: 2px solid var(--accent); }
+.le-ghost {
+  position: fixed; left: 0; top: 0; z-index: 100; pointer-events: none; margin: 0;
+  box-shadow: var(--pop-shadow); border-color: var(--accent); cursor: grabbing;
+}
+.le-dragging, .le-dragging * { cursor: grabbing !important; user-select: none; }
+.le-options, .le-behaviour {
+  display: grid; gap: 10px; margin-top: 10px; padding: 12px 14px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+}
+.le-behaviour { margin-top: 0; }
+.le-behaviour h3 { margin: 0; }
+.le-option { display: grid; gap: 4px; font-size: 14px; }
+.le-option .input { max-width: 320px; }
+.le-option-inline { display: flex; align-items: center; gap: 8px; }
+.le-actions { align-items: center; }
+.le-status.le-error { color: var(--danger); }
+.howto.advanced { margin-top: 4px; }
+.howto.advanced .form { margin: 12px 0; }

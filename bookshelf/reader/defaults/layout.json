@@ -1,0 +1,11 @@
+{
+  "autohide": { "enabled": true, "delayMs": 3500, "tapZone": 0.18 },
+  "chapterFlow": { "overscrollPx": 160, "settleMs": 300, "resetMs": 1500, "cooldownMs": 450 },
+  "top": ["exit", "title", "spacer", "toc", "theme-toggle", "fullscreen", "settings"],
+  "bottom": [
+    "prev-chapter",
+    { "id": "chapter-progress", "showPercent": true },
+    { "id": "progress-text", "format": "percent" },
+    "next-chapter"
+  ]
+}

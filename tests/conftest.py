@@ -97,5 +97,57 @@ def make_epub(
     return buffer.getvalue()
 
 
+def make_chapter_epub(
+    title: str = "Chapter Test Book", chapters: int = 3, lines: int = 300
+) -> bytes:
+    """An EPUB with several long, well-formed XHTML chapters and an NCX table of contents,
+    for exercising chapter navigation in the browser reader."""
+    items = "".join(
+        f'<item id="ch{i}" href="ch{i}.xhtml" media-type="application/xhtml+xml"/>'
+        for i in range(1, chapters + 1)
+    )
+    spine = "".join(f'<itemref idref="ch{i}"/>' for i in range(1, chapters + 1))
+    nav_points = "".join(
+        f'<navPoint id="n{i}" playOrder="{i}"><navLabel><text>Chapter {i}</text></navLabel>'
+        f'<content src="ch{i}.xhtml"/></navPoint>'
+        for i in range(1, chapters + 1)
+    )
+    opf = f"""<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="id">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
+    <dc:title>{escape(title)}</dc:title>
+    <dc:creator opf:role="aut">Test Author</dc:creator>
+    <dc:language>en</dc:language>
+    <dc:identifier id="id">urn:test:{escape(title)}</dc:identifier>
+  </metadata>
+  <manifest>{items}<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/></manifest>
+  <spine toc="ncx">{spine}</spine>
+</package>"""
+    ncx = f"""<?xml version="1.0" encoding="utf-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <head/><docTitle><text>{escape(title)}</text></docTitle><navMap>{nav_points}</navMap>
+</ncx>"""
+    container = """<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+</container>"""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("mimetype", "application/epub+zip")
+        archive.writestr("META-INF/container.xml", container)
+        archive.writestr("OEBPS/content.opf", opf)
+        archive.writestr("OEBPS/toc.ncx", ncx)
+        for i in range(1, chapters + 1):
+            paragraphs = "".join(f"<p>Chapter {i}, line {n}.</p>" for n in range(lines))
+            archive.writestr(
+                f"OEBPS/ch{i}.xhtml",
+                '<?xml version="1.0" encoding="utf-8"?>\n'
+                '<html xmlns="http://www.w3.org/1999/xhtml"><head>'
+                f"<title>Chapter {i}</title></head><body><h1>Chapter {i}</h1>{paragraphs}"
+                "</body></html>",
+            )
+    return buffer.getvalue()
+
+
 def upload(client: TestClient, filename: str, data: bytes):
     return client.post("/api/books", files={"file": (filename, data, "application/octet-stream")})

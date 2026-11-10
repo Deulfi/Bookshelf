@@ -1,0 +1,149 @@
+{
+  "fonts": [
+    { "id": "publisher", "label": "Publisher’s font", "stack": "" },
+    { "id": "serif", "label": "Serif", "stack": "\"Iowan Old Style\", \"Palatino Linotype\", Palatino, Georgia, serif" },
+    { "id": "georgia", "label": "Georgia", "stack": "Georgia, \"Times New Roman\", serif" },
+    { "id": "sans", "label": "Sans-serif", "stack": "system-ui, -apple-system, \"Segoe UI\", Roboto, Arial, sans-serif" },
+    { "id": "mono", "label": "Monospace", "stack": "ui-monospace, \"Cascadia Mono\", Consolas, monospace" }
+  ],
+  "sections": [
+    {
+      "id": "theme",
+      "title": "Theme",
+      "controls": [
+        {
+          "key": "theme",
+          "type": "themes",
+          "label": "Theme",
+          "default": "auto",
+          "auto": { "light": "paper", "dark": "dark" }
+        }
+      ]
+    },
+    {
+      "id": "text",
+      "title": "Text",
+      "controls": [
+        { "key": "fontFamily", "type": "select", "label": "Font", "default": "publisher", "options": "@fonts" },
+        {
+          "key": "fontSize",
+          "type": "range",
+          "label": "Font size",
+          "min": 12,
+          "max": 32,
+          "step": 1,
+          "default": 18,
+          "unit": "px",
+          "css": "html, body { font-size: {value}px !important; }"
+        },
+        {
+          "key": "lineHeight",
+          "type": "range",
+          "label": "Line height",
+          "min": 1,
+          "max": 2.4,
+          "step": 0.1,
+          "default": 1.5,
+          "css": "html, body, p, li, blockquote, dd { line-height: {value} !important; }"
+        },
+        {
+          "key": "paragraphSpacing",
+          "type": "range",
+          "label": "Paragraph spacing",
+          "min": 0,
+          "max": 2,
+          "step": 0.1,
+          "default": 0.6,
+          "unit": "em",
+          "css": "p { margin-top: 0 !important; margin-bottom: {value}em !important; }"
+        },
+        {
+          "key": "textAlign",
+          "type": "segmented",
+          "label": "Alignment",
+          "default": "book",
+          "options": [
+            { "value": "book", "label": "Book" },
+            { "value": "start", "label": "Left", "css": "p, li, blockquote, dd { text-align: start !important; }" },
+            { "value": "justify", "label": "Justified", "css": "p, li, blockquote, dd { text-align: justify !important; }" }
+          ]
+        },
+        {
+          "key": "hyphenate",
+          "type": "toggle",
+          "label": "Hyphenation",
+          "default": true,
+          "css": "p, li, blockquote, dd { -webkit-hyphens: auto !important; hyphens: auto !important; }"
+        }
+      ]
+    },
+    {
+      "id": "layout",
+      "title": "Layout",
+      "controls": [
+        {
+          "key": "flow",
+          "type": "segmented",
+          "label": "Reading mode",
+          "default": "scrolled",
+          "options": [
+            { "value": "scrolled", "label": "Scroll" },
+            { "value": "paginated", "label": "Pages" }
+          ]
+        },
+        {
+          "key": "autoAdvance",
+          "type": "toggle",
+          "label": "Load next chapter when scrolling past the end",
+          "default": true
+        },
+        {
+          "key": "maxWidth",
+          "type": "range",
+          "label": "Text width",
+          "min": 400,
+          "max": 1400,
+          "step": 20,
+          "default": 720,
+          "unit": "px"
+        },
+        {
+          "key": "margin",
+          "type": "range",
+          "label": "Side margin",
+          "min": 0,
+          "max": 20,
+          "step": 1,
+          "default": 6,
+          "unit": "%"
+        },
+        {
+          "key": "columns",
+          "type": "segmented",
+          "label": "Columns (page mode)",
+          "default": 2,
+          "options": [
+            { "value": 1, "label": "1" },
+            { "value": 2, "label": "2" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sync",
+      "title": "Sync",
+      "controls": [
+        {
+          "key": "syncConflict",
+          "type": "segmented",
+          "label": "When another device read on",
+          "default": "ask",
+          "options": [
+            { "value": "ask", "label": "Ask" },
+            { "value": "latest", "label": "Use latest" }
+          ]
+        }
+      ]
+    }
+  ]
+}

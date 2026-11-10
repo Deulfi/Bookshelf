@@ -55,10 +55,14 @@
     {% endcall %}
   </section>
 
-  {% if user.is_admin and scanner.enabled %}
+  {% if user.is_admin %}
   <section class="card" id="library-folder">
-    <h2>{{ icon('sync', 18) }} Library folder</h2>
-    <p class="card-sub">Bookshelf scans the library folder on startup. New files are added; entries whose file is gone are removed.</p>
+    <h2>{{ icon('sync', 18) }} Library folders</h2>
+    {% if scanner.shared %}
+    <p class="card-sub">All books live in the shared library folder. Bookshelf scans it on startup: new files are added (to the first administrator), entries whose file is gone are removed.</p>
+    {% else %}
+    <p class="card-sub">Every user has a library folder in the data directory (<code>books/&lt;user id&gt;/</code>), organized as Author/Series/Title. Bookshelf scans all of them on startup: new files are added, entries whose file is gone are removed. Users can also scan their own folder with the Scan button.</p>
+    {% endif %}
     <p class="small muted">
       {% if scanner.running %}Scanning…{% elif scanner.last_result %}
       Last scan {{ scanner.last_result.finished_at.strftime('%Y-%m-%d %H:%M') }}:
@@ -67,7 +71,7 @@
     </p>
     <div class="actions">
       <form method="post" action="/settings/scan">
-        <button class="btn btn-primary" type="submit"{% if scanner.running %} disabled{% endif %}>{{ icon('sync', 18) }} Scan now</button>
+        <button class="btn btn-primary" type="submit"{% if scanner.running %} disabled{% endif %}>{{ icon('sync', 18) }} Scan {{ 'now' if scanner.shared else 'all folders now' }}</button>
       </form>
       <form method="post" action="/settings/scan-interval" class="form">
         <label class="field-label" for="scan-interval">Scan automatically</label>
@@ -116,6 +120,37 @@
     {% endcall %}
   </section>
 
+  <section class="card" id="web-reader">
+    <h2>{{ icon('book', 18) }} Web reader</h2>
+    <p class="card-sub">Choose what the reader’s top and bottom bars show. Drag elements into a bar and drag them to reorder, or use the arrow buttons. Themes, fonts and text settings are changed in the reader itself.</p>
+    {{ alert(reader_error) }}
+    {% if reader_file_error and not reader_error %}{{ alert('Your reader configuration file is ignored because it has an error: ' ~ reader_file_error) }}{% endif %}
+    {% if request.query_params.get('reader') == 'saved' and not reader_error %}{{ alert('Reader configuration saved.', 'ok') }}{% endif %}
+
+    <div class="layout-editor" id="layout-editor" data-elements-url="/api/reader/layout" data-save-url="/settings/reader/layout">
+      <p class="muted small">Loading the bar editor…</p>
+    </div>
+
+    <details class="howto advanced"{% if reader_error %} open{% endif %}>
+      <summary>Advanced: edit the configuration as JSON</summary>
+      <p class="small muted">This is your file <code>{{ reader_config_file }}</code> in the data directory; you can also edit it there directly. It is merged on top of the <a class="link" href="/settings/reader/defaults" target="_blank">current defaults</a>, so include only what you want to change. The bar editor above writes its <code>layout</code> part.</p>
+      <form method="post" action="/settings/reader" class="form">
+        <div class="field">
+          <label for="reader-config">Your overrides</label>
+          <textarea class="input mono" id="reader-config" name="config" rows="12" spellcheck="false" placeholder='{"themes": [{"id": "night", "label": "Night", "scheme": "dark", "bg": "#101418", "fg": "#c9d1d9"}]}'>{{ reader_config_text }}</textarea>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" name="action" value="save">Save JSON</button>
+          <button class="btn" name="action" value="reset" formnovalidate>Reset everything to defaults</button>
+        </div>
+      </form>
+      <ul class="steps small">
+        <li><strong>themes</strong>, <strong>settings.fonts</strong>, <strong>settings.sections</strong> and their <strong>controls</strong> merge by <code>id</code> (controls by <code>key</code>): a new id adds an entry, an existing id changes it, and <code>"hidden": true</code> removes it. <code>layout.top</code> / <code>layout.bottom</code> replace the default lists.</li>
+        <li>Example: <code>{"settings": {"sections": [{"id": "text", "controls": [{"key": "fontSize", "max": 48}]}]}}</code> raises the largest font size to 48.</li>
+      </ul>
+    </details>
+  </section>
+
   <section class="card">
     <h2>{{ icon('key', 18) }} Change password</h2>
     <p class="card-sub">Your password is also used by KOReader and OPDS.</p>
@@ -148,4 +183,6 @@
     </form>
   </section>
 </div>
+<script type="importmap">{{ reader_import_map()|tojson }}</script>
+<script type="module" src="{{ static('js/reader-layout.js') }}"></script>
 {% endblock %}

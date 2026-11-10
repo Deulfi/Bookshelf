@@ -24,15 +24,22 @@
     <h2 class="section-title" id="continue-heading">Continue reading</h2>
     <div class="continue-row">
       {% for entry in continue_reading %}
-      <a class="continue-card" href="/books/{{ entry.book.id }}">
-        <div class="continue-cover cover-frame">{{ cover(entry.book) }}</div>
-        <div class="continue-info">
+      <div class="continue-card">
+        {% if entry.book.format in readable_formats %}
+        <a class="continue-cover cover-frame" href="/read/{{ entry.book.id }}" aria-label="Read “{{ entry.book.title }}” in the browser" title="Continue reading">
+          {{ cover(entry.book) }}
+          <span class="cover-read" aria-hidden="true">{{ icon('book', 22) }}</span>
+        </a>
+        {% else %}
+        <a class="continue-cover cover-frame" href="/books/{{ entry.book.id }}" tabindex="-1" aria-hidden="true">{{ cover(entry.book) }}</a>
+        {% endif %}
+        <a class="continue-info" href="/books/{{ entry.book.id }}">
           <div class="book-title">{{ entry.book.title }}</div>
           {% if entry.book.author %}<div class="book-author">{{ entry.book.author }}</div>{% endif %}
           <div class="progress" role="progressbar" aria-valuenow="{{ entry.percent }}" aria-valuemin="0" aria-valuemax="100"><span style="width: {{ entry.percent }}%"></span></div>
           <div class="continue-meta">{{ entry.percent }}% · {{ entry.last_read|timeago }}{% if entry.progress.device %} · {{ entry.progress.device }}{% endif %}</div>
-        </div>
-      </a>
+        </a>
+      </div>
       {% endfor %}
     </div>
   </section>

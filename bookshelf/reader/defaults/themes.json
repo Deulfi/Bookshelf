@@ -1,0 +1,8 @@
+[
+  { "id": "light", "label": "Light", "scheme": "light", "bg": "#ffffff", "fg": "#1f1f1f", "link": "#0b57d0" },
+  { "id": "paper", "label": "Paper", "scheme": "light", "bg": "#f6f5f1", "fg": "#1c1b19", "link": "#2f6b58" },
+  { "id": "sepia", "label": "Sepia", "scheme": "light", "bg": "#f4ecd8", "fg": "#5b4636", "link": "#8a4b08" },
+  { "id": "gray", "label": "Gray", "scheme": "dark", "bg": "#2b2b2b", "fg": "#d6d6d6", "link": "#8ab4f8" },
+  { "id": "dark", "label": "Dark", "scheme": "dark", "bg": "#151513", "fg": "#e0dfda", "link": "#7ac4a7" },
+  { "id": "black", "label": "Black", "scheme": "dark", "bg": "#000000", "fg": "#c8c8c8", "link": "#8ab4f8" }
+]

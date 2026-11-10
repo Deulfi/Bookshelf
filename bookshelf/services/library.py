@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import re
 import time
-import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -96,13 +96,10 @@ def import_book(
             raise DuplicateBookError(existing)
 
         metadata = extract_metadata(temp_path, fmt, filename)
-        root = storage.upload_root(user.id)
-        if storage.ingest_dir is not None:
-            relative = storage.schema_relative_path(
-                metadata.author, metadata.series, metadata.title, fmt
-            )
-        else:
-            relative = f"{uuid.uuid4().hex}.{fmt}"
+        root = storage.library_root(user.id)
+        relative = storage.schema_relative_path(
+            metadata.author, metadata.series, metadata.title or PurePath(filename).stem, fmt
+        )
         stored_path = storage.store_book(temp_path, root, relative)
         book = Book(
             user_id=user.id,
@@ -129,24 +126,34 @@ def import_book(
     except BaseException:
         db.rollback()
         if stored_path is not None:
-            (storage.upload_root(user.id) / stored_path).unlink(missing_ok=True)
+            (storage.library_root(user.id) / stored_path).unlink(missing_ok=True)
         raise
     finally:
         temp_path.unlink(missing_ok=True)
 
 
-def import_from_disk(db: Session, storage: Storage, user: User, path: Path) -> Book:
-    """Register a book file that already lives in the library folder (no copy)."""
+def _duplicate_scope(storage: Storage, user: User) -> Select:
+    """Books a scanned file is compared with. The shared ingest folder holds every user's
+    uploads, so there any user's copy counts; a per-user folder only knows its owner's books."""
+    statement = select(Book)
     if storage.ingest_dir is None:
-        raise LibraryError("No library folder is configured.")
+        statement = statement.where(Book.user_id == user.id)
+    return statement
+
+
+def import_from_disk(db: Session, storage: Storage, user: User, path: Path) -> Book:
+    """Register a book file that already lives in the user's library folder (no copy)."""
+    root = storage.library_root(user.id)
     fmt = detect_format(path.name)
     if fmt is None:
         raise LibraryError(f"Unsupported file type: {path.name}")
+    relative = path.relative_to(root).as_posix()
 
     document_hash = partial_md5(path)
-    existing = db.scalar(select(Book).where(Book.partial_md5 == document_hash))
+    existing = db.scalar(
+        _duplicate_scope(storage, user).where(Book.partial_md5 == document_hash).limit(1)
+    )
     if existing is not None:
-        relative = path.relative_to(storage.ingest_dir).as_posix()
         if existing.file_path != relative and storage.find_book_file(existing) is None:
             # The file was moved or renamed outside Bookshelf: follow it instead of leaving
             # a broken entry behind.
@@ -166,7 +173,7 @@ def import_from_disk(db: Session, storage: Storage, user: User, path: Path) -> B
         publisher=metadata.publisher,
         format=fmt,
         original_filename=path.name,
-        file_path=path.relative_to(storage.ingest_dir).as_posix(),
+        file_path=relative,
         file_size=path.stat().st_size,
         partial_md5=document_hash,
         filename_md5=filename_md5(path.name),
@@ -182,18 +189,23 @@ def import_from_disk(db: Session, storage: Storage, user: User, path: Path) -> B
 def sync_library(
     db: Session, storage: Storage, user: User, log: Callable[[str], None] | None = None
 ) -> int:
-    """Register new books found in the library folder and drop entries whose file is gone."""
-    if storage.ingest_dir is None or not storage.ingest_dir.is_dir():
-        return 0
-    known_paths = set(db.scalars(select(Book.file_path)))
+    """Scan ``user``'s library folder: register new book files in place, move books with
+    legacy random file names to Author/Series/Title, and drop entries whose file is gone."""
+    root = storage.library_root(user.id)
+    shared = storage.ingest_dir is not None
+    if shared and not root.is_dir():
+        return 0  # the shared folder is not mounted: never touch the database then
+    root.mkdir(parents=True, exist_ok=True)
+    reorganize_legacy_files(db, storage, user, log=log)
+    known_paths = set(db.scalars(_duplicate_scope(storage, user).with_only_columns(Book.file_path)))
     imported = 0
     seen_files = 0
     now = time.time()
-    for path in sorted(storage.ingest_dir.rglob("*")):
+    for path in sorted(root.rglob("*")):
         if not path.is_file() or detect_format(path.name) is None:
             continue
         seen_files += 1
-        relative = path.relative_to(storage.ingest_dir).as_posix()
+        relative = path.relative_to(root).as_posix()
         if relative in known_paths:
             continue
         try:
@@ -211,18 +223,50 @@ def sync_library(
         known_paths.add(relative)
         if log:
             log(f"imported {relative} as #{book.id}")
-    # An empty folder usually means an unmounted share, not a deleted library: never prune then.
-    if seen_files:
-        prune_missing(db, storage, log=log)
+    # An empty shared folder usually means an unmounted share, not a deleted library: never
+    # prune then. A per-user folder lives in the data dir, so an empty one really is empty.
+    if seen_files or not shared:
+        prune_missing(db, storage, log=log, user=None if shared else user)
     return imported
 
 
-def prune_missing(db: Session, storage: Storage, log: Callable[[str], None] | None = None) -> int:
-    """Delete database entries (and covers) whose book file no longer exists on disk."""
-    if storage.ingest_dir is not None and not _has_books(storage.ingest_dir):
+_LEGACY_NAME = re.compile(r"^[0-9a-f]{32}$")
+
+
+def reorganize_legacy_files(
+    db: Session, storage: Storage, user: User, log: Callable[[str], None] | None = None
+) -> int:
+    """Move uploads stored under random names (older versions) to Author/Series/Title.ext."""
+    moved = 0
+    for book in db.scalars(select(Book).where(Book.user_id == user.id)).all():
+        path = PurePath(book.file_path)
+        if len(path.parts) != 1 or not _LEGACY_NAME.match(path.stem):
+            continue
+        wanted = storage.schema_relative_path(book.author, book.series, book.title, book.format)
+        final = storage.move_book(book, wanted)
+        if final is None:
+            continue  # file missing: prune_missing deals with it
+        book.file_path = final
+        db.commit()
+        moved += 1
+        if log:
+            log(f"renamed #{book.id} to {final}")
+    return moved
+
+
+def prune_missing(
+    db: Session,
+    storage: Storage,
+    log: Callable[[str], None] | None = None,
+    user: User | None = None,
+) -> int:
+    """Delete database entries (and covers) whose book file no longer exists on disk;
+    only ``user``'s books when given."""
+    if user is None and storage.ingest_dir is not None and not _has_books(storage.ingest_dir):
         return 0  # library folder missing or empty: could be an unmounted share
+    statement = select(Book) if user is None else select(Book).where(Book.user_id == user.id)
     removed = 0
-    for book in db.scalars(select(Book)).all():
+    for book in db.scalars(statement).all():
         if storage.find_book_file(book) is None:
             if log:
                 log(f"removed #{book.id} “{book.title}”: file is gone ({book.file_path})")
@@ -397,7 +441,7 @@ def update_metadata(db: Session, storage: Storage, book: Book, **changes: object
         book.series_index = changes["series_index"]  # type: ignore[assignment]
     old_path = book.file_path
     final: str | None = None
-    if storage.ingest_dir is not None and (storage.ingest_dir / old_path).is_file():
+    if storage.find_book_file(book) is not None:
         wanted = storage.schema_relative_path(book.author, book.series, book.title, book.format)
         if wanted != old_path:
             final = storage.move_book(book, wanted)

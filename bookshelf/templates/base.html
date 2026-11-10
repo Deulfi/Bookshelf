@@ -25,6 +25,9 @@
         <a href="/admin/users" class="{{ 'active' if nav == 'admin' }}" title="Users">{{ icon('users') }}<span>Users</span></a>
         {% endif %}
       </nav>
+      {% if not request.app.state.scanner.shared or user.is_admin %}
+      <button type="button" class="btn btn-scan" data-scan-trigger title="Look for books added to or removed from your library folder">{{ icon('sync', 18) }}<span>Scan</span></button>
+      {% endif %}
       <button type="button" class="btn btn-primary btn-upload" data-upload-trigger>{{ icon('upload', 18) }}<span>Upload</span></button>
     </div>
   </header>

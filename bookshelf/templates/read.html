@@ -1,199 +1,70 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ book.title }} — Bookshelf</title>
-    <link rel="stylesheet" href="{{ static('css/app.css') }}">
-    <style>
-        body { margin: 0; }
-        #reader-header {
-            position: fixed; top: 0; left: 0; right: 0; height: 48px;
-            background: var(--surface); border-bottom: 1px solid var(--border);
-            display: flex; align-items: center; gap: 12px; padding: 0 16px; z-index: 100;
-        }
-        #reader-header a {
-            text-decoration: none; color: inherit; font-size: 14px;
-            display: flex; align-items: center; gap: 6px;
-        }
-        #reader-header .title {
-            font-size: 13px; color: var(--muted); flex: 1;
-            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-        }
-        #reader { height: calc(100vh - 48px); margin-top: 48px; }
-        foliate-view { display: block; height: 100%; }
-        .settings-panel {
-            position: fixed; top: 60px; right: 16px; width: 260px;
-            background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); padding: 16px; z-index: 200;
-            font-size: 13px; display: none;
-        }
-        .settings-panel.visible { display: block; }
-        .settings-panel h3 { margin: 0 0 8px; font-size: 13px; }
-        .settings-panel label { display: block; margin: 10px 0 4px; color: var(--muted); }
-        .settings-panel input[type="range"], .settings-panel select { width: 100%; }
-        .settings-panel .presets { display: flex; gap: 8px; margin-top: 12px; }
-        .settings-panel .presets button { flex: 1; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
+  <title>{{ book.title }} · Bookshelf</title>
+  <link rel="icon" href="{{ static('favicon.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ static('css/app.css') }}">
+  <link rel="stylesheet" href="{{ static('css/reader.css') }}">
+  <script type="importmap">{{ reader_import_map()|tojson }}</script>
 </head>
-<body>
-    <header id="reader-header">
-        <a href="/">{{ icon("arrow-left", 18) }} Library</a>
-        <button class="btn" onclick="goBack()" title="Previous page">{{ icon("arrow-left", 16) }}</button>
-        <button class="btn" onclick="goForward()" title="Next page">{{ icon("arrow-right", 16) }}</button>
-        <span class="title">{{ book.title }}</span>
-        <button class="btn" onclick="toggleSettings()">{{ icon("settings", 16) }} Settings</button>
-    </header>
+<body class="reader-page">
+  <header class="reader-bar reader-bar-top" id="reader-top" aria-label="Reader toolbar"></header>
 
-    <div id="reader">
-        <foliate-view id="view"></foliate-view>
+  <main id="reader">
+    <foliate-view id="view"></foliate-view>
+    <p class="reader-status" id="reader-status" role="status">Opening book…</p>
+  </main>
+
+  <footer class="reader-bar reader-bar-bottom" id="reader-bottom" aria-label="Reader navigation"></footer>
+
+  <div class="chapter-hint" id="chapter-hint" aria-hidden="true">
+    <span class="ch-label"></span>
+    <span class="ch-meter"><span></span></span>
+  </div>
+
+  <div class="reader-scrim" id="reader-scrim" hidden></div>
+
+  <aside class="reader-panel reader-panel-start" data-panel="toc" aria-label="Contents" hidden>
+    <div class="panel-head">
+      <h2>Contents</h2>
+      <button type="button" class="rb-btn" data-close aria-label="Close">{{ icon('x', 20) }}</button>
     </div>
+    <nav class="panel-body toc"></nav>
+  </aside>
 
-    <div class="settings-panel" id="settings-panel">
-        <h3>Appearance</h3>
-        <label for="font-size">Font Size</label>
-        <input type="range" id="font-size" min="12" max="32" step="1" value="18" oninput="updateSetting('fontSize', this.value)">
-        <label for="font-family">Font Family</label>
-        <select id="font-family" onchange="updateSetting('fontFamily', this.value)">
-            <option value="'Georgia', serif">Georgia</option>
-            <option value="'Times New Roman', serif">Times New Roman</option>
-            <option value="'Helvetica Neue', sans-serif">Helvetica</option>
-            <option value="'Arial', sans-serif">Arial</option>
-            <option value="system-ui, sans-serif">System</option>
-        </select>
-        <label for="text-color">Text Color</label>
-        <input type="color" id="text-color" value="#333333" oninput="updateSetting('textColor', this.value)">
-        <label for="bg-color">Background Color</label>
-        <input type="color" id="bg-color" value="#ffffff" oninput="updateSetting('bgColor', this.value)">
-        <h3>Themes</h3>
-        <div class="presets">
-            <button onclick="applyPreset('light')">Light</button>
-            <button onclick="applyPreset('sepia')">Sepia</button>
-            <button onclick="applyPreset('dark')">Dark</button>
-        </div>
+  <aside class="reader-panel reader-panel-end" data-panel="settings" aria-label="Reader settings" hidden>
+    <div class="panel-head">
+      <h2>Reader settings</h2>
+      <button type="button" class="rb-btn" data-close aria-label="Close">{{ icon('x', 20) }}</button>
     </div>
+    <div class="panel-body settings"></div>
+  </aside>
 
-    <script type="module">
-        import '/static/js/foliate/view.js'
+  <dialog class="sync-dialog" id="sync-dialog" aria-labelledby="sync-title">
+    <form method="dialog">
+      <h2 id="sync-title">Continue where?</h2>
+      <p class="sync-lead">This book was read on another device since you were last here.</p>
+      <button class="sync-choice" value="remote" autofocus>
+        <span class="sync-device" data-remote-device></span>
+        <span class="sync-where" data-remote-where></span>
+      </button>
+      <button class="sync-choice" value="local">
+        <span class="sync-device">This browser</span>
+        <span class="sync-where" data-local-where></span>
+      </button>
+      <label class="sync-always"><input type="checkbox" name="always"> Always use the latest position</label>
+    </form>
+  </dialog>
 
-        const view = document.getElementById('view')
-        const bookId = {{ book.id }}
-
-        const SETTINGS_KEY = 'bookshelf-reader-settings'
-        const POSITION_KEY = 'bookshelf-reader-position-' + bookId
-        const DEFAULTS = {
-            fontSize: 18,
-            fontFamily: "'Georgia', serif",
-            textColor: '#333333',
-            bgColor: '#ffffff',
-        }
-        const PRESETS = {
-            light: { ...DEFAULTS },
-            sepia: { ...DEFAULTS, textColor: '#5b4636', bgColor: '#f4ecd8' },
-            dark: { ...DEFAULTS, fontFamily: "'Helvetica Neue', sans-serif", textColor: '#e0e0e0', bgColor: '#1a1a1a' },
-        }
-
-        let settings = { ...DEFAULTS, ...loadSettings() }
-
-        function loadSettings() {
-            try {
-                return JSON.parse(localStorage.getItem(SETTINGS_KEY)) ?? {}
-            } catch {
-                return {}
-            }
-        }
-
-        function saveSettings() {
-            localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
-            syncControls()
-        }
-
-        function syncControls() {
-            document.getElementById('font-size').value = settings.fontSize
-            document.getElementById('font-family').value = settings.fontFamily
-            document.getElementById('text-color').value = settings.textColor
-            document.getElementById('bg-color').value = settings.bgColor
-        }
-
-        function applyStyles() {
-            view.renderer?.setStyles?.(`
-                html, body { background: ${settings.bgColor} !important; }
-                body {
-                    font-size: ${settings.fontSize}pt !important;
-                    font-family: ${settings.fontFamily} !important;
-                    color: ${settings.textColor} !important;
-                }
-            `)
-            document.body.style.background = settings.bgColor
-        }
-
-        // Load the saved position: server first, localStorage as the offline fallback.
-        async function loadPosition() {
-            try {
-                const res = await fetch(`/api/books/${bookId}/position`)
-                if (res.ok) {
-                    const data = await res.json()
-                    if (data.cfi) return data.cfi
-                }
-            } catch {
-                // offline: fall through to localStorage
-            }
-            return localStorage.getItem(POSITION_KEY)
-        }
-
-        let remoteSaveTimer = null
-
-        function savePosition() {
-            const cfi = view.lastLocation?.cfi
-            if (!cfi) return
-            localStorage.setItem(POSITION_KEY, cfi)
-            if (remoteSaveTimer) clearTimeout(remoteSaveTimer)
-            remoteSaveTimer = setTimeout(saveRemotePosition, 5000)
-        }
-
-        async function saveRemotePosition() {
-            remoteSaveTimer = null
-            const loc = view.lastLocation
-            if (!loc?.cfi) return
-            try {
-                await fetch(`/api/books/${bookId}/position`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ cfi: loc.cfi, fraction: loc.fraction ?? 0 }),
-                })
-            } catch {
-                // offline: the position is already in localStorage
-            }
-        }
-
-        window.toggleSettings = () => document.getElementById('settings-panel').classList.toggle('visible')
-        window.goBack = () => view.prev()
-        window.goForward = () => view.next()
-
-        window.updateSetting = (key, value) => {
-            settings[key] = key === 'fontSize' ? Number(value) : value
-            saveSettings()
-            applyStyles()
-        }
-
-        window.applyPreset = (name) => {
-            settings = { ...settings, ...PRESETS[name] }
-            saveSettings()
-            applyStyles()
-        }
-
-        // open the book in scrolled flow mode
-        view.addEventListener('load', applyStyles)
-        await view.open('{{ file_url }}')
-        view.renderer.setAttribute('flow', 'scrolled')
-        applyStyles()
-        await view.init({ lastLocation: await loadPosition(), showTextStart: true })
-
-        // persist reading position as it moves
-        view.addEventListener('relocate', savePosition)
-        window.addEventListener('beforeunload', savePosition)
-
-        syncControls()
-    </script>
+  <template id="reader-icons">
+    {%- for name, svg in reader_icons.items() %}
+    <span data-icon="{{ name }}">{{ svg }}</span>
+    {%- endfor %}
+  </template>
+  <script type="application/json" id="reader-bootstrap">{{ bootstrap|tojson }}</script>
+  <script type="module" src="{{ static('js/reader/main.js') }}"></script>
 </body>
 </html>

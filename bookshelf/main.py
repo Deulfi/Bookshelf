@@ -15,8 +15,7 @@ from . import __version__
 from .config import Settings
 from .db import init_database
 from .deps import LoginRequired
-from .routers import account, admin, auth, kosync, library, opds, stats, webdav
-from .services import library as library_service
+from .routers import account, admin, auth, kosync, library, opds, reader, stats, webdav
 from .services.scanner import LibraryScanner
 from .storage import Storage
 from .templating import render
@@ -36,7 +35,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.sessionmaker = init_database(settings.database_url)
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-    for module in (auth, library, stats, account, admin, kosync, opds, webdav):
+    for module in (auth, library, reader, stats, account, admin, kosync, opds, webdav):
         app.include_router(module.router)
 
     app.add_exception_handler(kosync.KosyncError, kosync.kosync_error_handler)
@@ -44,10 +43,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_exception_handler(StarletteHTTPException, _http_error_handler)
     scanner = LibraryScanner(app.state.sessionmaker, storage, settings.data_dir / "scan.json")
     app.state.scanner = scanner
-    if scanner.enabled:
-        scanner.start()  # scans once now, then on the interval chosen in the settings
-    else:
-        _prune_on_startup(app, storage)  # still drop entries whose files are gone
+    scanner.start()  # scans once now, then on the interval chosen in the settings
     return app
 
 
@@ -76,14 +72,3 @@ async def _http_error_handler(request: Request, exc: StarletteHTTPException) -> 
             message=exc.detail,
         )
     return await http_exception_handler(request, exc)
-
-
-def _prune_on_startup(app: FastAPI, storage: Storage) -> None:
-    """Drop entries whose files are gone, e.g. after starting without the library folder."""
-    try:
-        with app.state.sessionmaker() as db:
-            library_service.prune_missing(
-                db, storage, log=lambda m: print(f"[scan] {m}", flush=True)
-            )
-    except Exception as error:
-        print(f"[scan] startup cleanup failed: {error}", flush=True)

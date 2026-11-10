@@ -90,15 +90,19 @@ def test_position_roundtrip(admin_client: TestClient) -> None:
 
     empty = admin_client.get(f"/api/books/{book_id}/position")
     assert empty.status_code == 200
-    assert empty.json() == {"cfi": None, "percentage": None}
+    assert empty.json() == {"progress": None, "cfi": None, "percentage": None}
 
+    # older reader scripts send "cfi"
     cfi = "epubcfi(/6/2[para:1]{1})"
     put = admin_client.put(f"/api/books/{book_id}/position", json={"cfi": cfi, "fraction": 0.42})
     assert put.status_code == 200
-    assert put.json() == {"cfi": cfi, "percentage": 0.42}
+    assert put.json()["progress"] == cfi
+    assert put.json()["percentage"] == 0.42
 
-    got = admin_client.get(f"/api/books/{book_id}/position")
-    assert got.json() == {"cfi": cfi, "percentage": 0.42}
+    got = admin_client.get(f"/api/books/{book_id}/position").json()
+    assert got["progress"] == got["cfi"] == cfi
+    assert got["percentage"] == 0.42
+    assert got["device"] == "Web reader"
 
     # the record is the one the library displays (keyed by the book's partial_md5)
     page = admin_client.get(f"/books/{book_id}")

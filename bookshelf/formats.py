@@ -20,6 +20,9 @@ SUPPORTED_FORMATS: dict[str, str] = {
     "chm": "application/vnd.ms-htmlhelp",
 }
 
+# Formats the browser reader (foliate-js) opens without extra libraries.
+READABLE_FORMATS = frozenset({"epub", "mobi", "azw3", "fb2", "cbz"})
+
 
 def detect_format(filename: str) -> str | None:
     ext = PurePath(filename).suffix.lower().lstrip(".")

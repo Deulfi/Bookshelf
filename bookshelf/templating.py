@@ -14,7 +14,7 @@ from markupsafe import Markup, escape
 from starlette.responses import HTMLResponse
 
 from . import __version__
-from .formats import SUPPORTED_FORMATS
+from .formats import READABLE_FORMATS, SUPPORTED_FORMATS
 from .icons import icon
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -115,6 +115,14 @@ def static_url(path: str) -> str:
     return f"/static/{path}?v={_static_version(path)}"
 
 
+def reader_import_map() -> dict[str, dict[str, str]]:
+    """Map every browser reader module to its content-hashed URL, so modules imported by other
+    modules are fetched again after an update, just like the entry point."""
+    root = STATIC_DIR / "js" / "reader"
+    paths = sorted(p.relative_to(STATIC_DIR).as_posix() for p in root.rglob("*.js"))
+    return {"imports": {f"/static/{path}": static_url(path) for path in paths}}
+
+
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 templates.env.filters.update(
     filesize=filesize,
@@ -131,7 +139,9 @@ templates.env.filters.update(
 templates.env.globals.update(
     icon=icon,
     static=static_url,
+    reader_import_map=reader_import_map,
     version=__version__,
+    readable_formats=READABLE_FORMATS,
     status_labels=STATUS_LABELS,
     sort_labels=SORT_LABELS,
     upload_accept=",".join(f".{ext}" for ext in SUPPORTED_FORMATS),

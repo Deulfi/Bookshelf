@@ -35,8 +35,55 @@
     }
     if (target.closest("[data-upload-trigger]")) {
       $("#upload-input")?.click();
+      return;
     }
+    const scanButton = target.closest("[data-scan-trigger]");
+    if (scanButton) scanLibrary(scanButton);
   });
+
+  /* ---------- Library scan (files added to or removed from the library folder) ---------- */
+
+  const SCAN_URL = "/api/library/scan";
+
+  async function scanLibrary(button) {
+    if (button.classList.contains("is-busy")) return;
+    button.classList.add("is-busy");
+    button.disabled = true;
+    try {
+      let status = await (await fetch(SCAN_URL, { method: "POST" })).json();
+      if (status.error && status.started === undefined) throw new Error(status.error);
+      while (status.running || status.started === false) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        status = await (await fetch(SCAN_URL)).json();
+        if (!status.running) break;
+      }
+      if (status.error) throw new Error(status.error);
+      const changes = [];
+      if (status.imported) changes.push(`${status.imported} added`);
+      if (status.removed) changes.push(`${status.removed} removed`);
+      toast(changes.length ? `Scan finished: ${changes.join(", ")}.` : "Scan finished: no changes.");
+      if ((status.imported || status.removed) && document.getElementById("library") && window.htmx) {
+        window.htmx.ajax("GET", location.pathname + location.search, {
+          target: "#library",
+          swap: "outerHTML",
+        });
+      }
+    } catch (error) {
+      toast(`Scan failed: ${error.message}`, true);
+    } finally {
+      button.classList.remove("is-busy");
+      button.disabled = false;
+    }
+  }
+
+  function toast(message, isError = false) {
+    const element = document.createElement("div");
+    element.className = isError ? "toast toast-error" : "toast";
+    element.setAttribute("role", "status");
+    element.textContent = message;
+    document.body.append(element);
+    setTimeout(() => element.remove(), 4000);
+  }
 
   // Horizontally scrolling areas that should start at their end (e.g. the reading calendar).
   document.querySelectorAll("[data-scroll-end]").forEach((element) => {

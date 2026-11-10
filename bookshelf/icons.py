@@ -35,6 +35,14 @@ _PATHS: dict[str, str] = {
     "calendar": '<rect x="3" y="5" width="18" height="16" rx="2"/>'
     '<path d="M3 10h18M8 3v4M16 3v4"/>',
     "catalog": '<path d="M3 5h6v14H3zM9 5h6v14H9z"/><path d="m15 6 4.5-1 3 13.5-4.5 1z"/>',
+    "chevron-left": '<path d="m15 18-6-6 6-6"/>',
+    "chevron-right": '<path d="m9 18 6-6-6-6"/>',
+    "list": '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+    "sun": '<circle cx="12" cy="12" r="4"/>'
+    '<path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2'
+    'M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+    "maximize": '<path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3'
+    'M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>',
 }
 
 

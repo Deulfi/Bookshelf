@@ -6,11 +6,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse, Response
-from pydantic import BaseModel
 
 from ..deps import DB, AppSettings, AppStorage, CurrentUser
 from ..models import User
-from ..services import library, progress, reading_stats
+from ..services import chapters, library, reading_stats
 from ..services.library import BookEntry
 from ..services.metadata.base import parse_float
 from ..templating import render
@@ -18,8 +17,6 @@ from ._files import book_file_response, cover_response
 
 router = APIRouter()
 
-# Formats foliate-js can open without extra libraries (no PDF/DjVu/etc.).
-READABLE_FORMATS = {"epub", "mobi", "azw3", "fb2", "cbz"}
 PAGE_SIZE = 60  # books per page; more are loaded while scrolling
 
 
@@ -28,23 +25,6 @@ def _entry_or_404(db: DB, user: User, book_id: int) -> BookEntry:
     if entry is None:
         raise HTTPException(status_code=404, detail="Book not found.")
     return entry
-
-
-@router.get("/read/{book_id}")
-def read_book(request: Request, db: DB, user: CurrentUser, book_id: int) -> Response:
-    """Read a book in the browser using foliate-js."""
-    entry = _entry_or_404(db, user, book_id)
-    if entry.book.format not in READABLE_FORMATS:
-        raise HTTPException(status_code=404, detail="This format can't be read in the browser.")
-    return render(
-        request,
-        "read.html",
-        user=user,
-        nav="reading",
-        entry=entry,
-        book=entry.book,
-        file_url=f"/books/{book_id}/file",
-    )
 
 
 @router.get("/")
@@ -111,6 +91,36 @@ def library_page(
     return render(request, template, headers=headers, **context)
 
 
+def _may_scan(request: Request, user: User) -> bool:
+    """Everyone scans their own folder; the shared ingest folder belongs to the admins."""
+    return not request.app.state.scanner.shared or user.is_admin
+
+
+def _scan_status(request: Request) -> dict[str, object]:
+    scanner = request.app.state.scanner
+    result = scanner.last_result
+    return {
+        "running": scanner.running,
+        "imported": result.imported if result else 0,
+        "removed": result.removed if result else 0,
+        "error": result.error if result else None,
+    }
+
+
+@router.post("/api/library/scan")
+def start_scan(request: Request, user: CurrentUser) -> JSONResponse:
+    """Scan the user's library folder for added or removed files, in the background."""
+    if not _may_scan(request, user):
+        return JSONResponse({"error": "Only administrators can scan the library folder."}, 403)
+    started = request.app.state.scanner.scan_in_background(user.id)
+    return JSONResponse({**_scan_status(request), "started": started}, status_code=202)
+
+
+@router.get("/api/library/scan")
+def scan_status(request: Request, _user: CurrentUser) -> JSONResponse:
+    return JSONResponse(_scan_status(request))
+
+
 @router.post("/api/books")
 def upload_book(
     db: DB,
@@ -139,40 +149,6 @@ def upload_book(
     )
 
 
-class PositionBody(BaseModel):
-    """Position reported by the foliate reader: a CFI and a 0–1 fraction."""
-
-    cfi: str
-    fraction: float
-
-
-@router.get("/api/books/{book_id}/position")
-def get_position(db: DB, user: CurrentUser, book_id: int) -> JSONResponse:
-    """Saved reading position for the browser reader, if any."""
-    entry = _entry_or_404(db, user, book_id)
-    record = progress.get_progress(db, user.id, entry.book.partial_md5)
-    if record is None:
-        return JSONResponse({"cfi": None, "percentage": None})
-    return JSONResponse({"cfi": record.progress, "percentage": record.percentage})
-
-
-@router.put("/api/books/{book_id}/position")
-def put_position(body: PositionBody, db: DB, user: CurrentUser, book_id: int) -> JSONResponse:
-    """Save the reader position. Foliate's 0–1 fraction becomes the record's percentage,
-    in the same units the KOReader sync protocol uses."""
-    entry = _entry_or_404(db, user, book_id)
-    record = progress.save_progress(
-        db,
-        user.id,
-        entry.book.partial_md5,
-        progress=body.cfi,
-        percentage=body.fraction,
-        device="web",
-        device_id="",
-    )
-    return JSONResponse({"cfi": record.progress, "percentage": record.percentage})
-
-
 @router.get("/books/{book_id}")
 def book_page(
     request: Request, db: DB, user: CurrentUser, storage: AppStorage, book_id: int
@@ -184,6 +160,9 @@ def book_page(
     seconds_left = None
     if stats and entry.status == "reading":
         seconds_left = stats.seconds_left(entry.progress.percentage)
+    chapter = None
+    if entry.progress is not None:
+        chapter = chapters.chapter_at(storage, entry.book, entry.progress.progress)
     return render(
         request,
         "book.html",
@@ -193,6 +172,7 @@ def book_page(
         book=entry.book,
         stats=stats,
         seconds_left=seconds_left,
+        chapter=chapter,
     )
 
 

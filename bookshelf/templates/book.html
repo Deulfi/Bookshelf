@@ -22,6 +22,12 @@
         <span class="muted">{{ status_labels[entry.status] }}</span>
       </div>
       <div class="progress progress-lg" role="progressbar" aria-valuenow="{{ entry.percent }}" aria-valuemin="0" aria-valuemax="100"><span style="width: {{ entry.percent }}%"></span></div>
+      {% if chapter %}
+      <p class="progress-chapter">
+        <span class="progress-chapter-title" title="{{ chapter.title or '' }}">{{ chapter.title or chapter.kind ~ ' ' ~ chapter.number|thousands }}</span>
+        <span class="progress-chapter-count muted" title="{{ chapter.kind }} {{ chapter.number|thousands }} of {{ chapter.total|thousands }}">{{ chapter.number|thousands }}/{{ chapter.total|thousands }}</span>
+      </p>
+      {% endif %}
       <p class="muted small">{{ icon('sync', 14) }} Synced {{ entry.last_read|timeago }}{% if entry.progress.device %} from {{ entry.progress.device }}{% endif %}</p>
       {% if stats %}
       <p class="muted small reading-time">{{ icon('chart', 14) }} {{ stats.seconds|duration }} read{% if seconds_left %} · about {{ seconds_left|duration }} left{% endif %}</p>
@@ -32,10 +38,10 @@
     </div>
 
     <div class="actions">
-      {% if book.format in ('epub', 'mobi', 'azw3', 'fb2', 'cbz') %}
+      {% if book.format in readable_formats %}
       <a class="btn btn-primary" href="/read/{{ book.id }}">{{ icon('book', 18) }} Read in Browser</a>
       {% endif %}
-      <a class="btn{% if book.format not in ('epub', 'mobi', 'azw3', 'fb2', 'cbz') %} btn-primary{% endif %}" href="/books/{{ book.id }}/file" download>{{ icon('download', 18) }} Download</a>
+      <a class="btn{% if book.format not in readable_formats %} btn-primary{% endif %}" href="/books/{{ book.id }}/file" download>{{ icon('download', 18) }} Download</a>
       <form method="post" action="/books/{{ book.id }}/device">
         {% if book.device_sync_at %}
         <input type="hidden" name="enabled" value="false">
