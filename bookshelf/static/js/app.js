@@ -11,6 +11,9 @@
 
   /* ---------- Dialogs, copy buttons, upload trigger ---------- */
 
+  // A dialog re-rendered with a validation error opens again by itself.
+  document.querySelectorAll("dialog[data-open]").forEach((dialog) => dialog.showModal());
+
   document.addEventListener("click", (event) => {
     const target = event.target;
 

@@ -40,6 +40,10 @@ export class Sync {
         const remote = await this.#position.remote()
         this.#seen = remote?.timestamp ?? 0
         const decision = compare(local, remote, this.#position.device)
+        if (decision === 'reset') {
+            this.#position.clear()
+            return { target: null }
+        }
         if (decision === 'local') return { target: local?.cfi ?? null }
         if (decision === 'remote') return { target: this.#target(remote), fallback: remote }
         const choice = await this.#choose(local, remote)

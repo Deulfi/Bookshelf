@@ -16,6 +16,7 @@
     {% if book.author %}<p class="detail-author">{{ book.author }}</p>{% endif %}
 
     <div class="progress-card">
+      <button type="button" class="icon-btn progress-edit" data-dialog-open="progress-dialog" aria-label="Edit reading progress" title="Edit reading progress">{{ icon('edit', 16) }}</button>
       {% if entry.progress %}
       <div class="progress-head">
         <strong>{{ entry.percent }}%</strong>
@@ -72,6 +73,51 @@
     </dl>
   </div>
 </article>
+
+{% set use_chapter = chapter_total and (chapter or not entry.progress) %}
+<dialog id="progress-dialog" class="dialog dialog-sm" aria-labelledby="progress-title"{% if progress_error %} data-open{% endif %}>
+  <form method="post" action="/books/{{ book.id }}/progress" class="form progress-form">
+    <header class="dialog-head">
+      <h2 id="progress-title">Reading progress</h2>
+      <button type="button" class="icon-btn" data-dialog-close aria-label="Close">{{ icon('x') }}</button>
+    </header>
+    {{ alert(progress_error) }}
+    {% if chapter_total %}
+    <div class="pills progress-mode" role="radiogroup" aria-label="Set progress by">
+      <label class="pill"><input type="radio" name="mode" value="percent" id="mode-percent"{% if not use_chapter %} checked{% endif %}><span>Percentage</span></label>
+      <label class="pill"><input type="radio" name="mode" value="chapter" id="mode-chapter"{% if use_chapter %} checked{% endif %}><span>{{ chapter_kind }}</span></label>
+    </div>
+    {% else %}
+    <input type="hidden" name="mode" value="percent">
+    {% endif %}
+    <div class="field field-percent">
+      <label for="progress-percent">Percentage read</label>
+      <div class="input-suffix">
+        <input class="input" id="progress-percent" name="percent" type="number" min="0" max="100" step="0.1" inputmode="decimal" value="{{ '%.1f'|format(entry.progress.percentage * 100) if entry.progress else '0' }}">
+        <span>%</span>
+      </div>
+    </div>
+    {% if chapter_total %}
+    <div class="field field-chapter">
+      <label for="progress-chapter">{{ chapter_kind }}</label>
+      <div class="input-suffix">
+        <input class="input" id="progress-chapter" name="chapter" type="number" min="1" max="{{ chapter_total }}" step="1" inputmode="numeric" value="{{ chapter.number if chapter else 1 }}">
+        <span>of {{ chapter_total|thousands }}</span>
+      </div>
+      <p class="muted small">Starts the {{ chapter_kind|lower }} from its beginning.</p>
+    </div>
+    {% endif %}
+    <p class="muted small">KOReader and other apps pick this up the next time they sync.</p>
+    <footer class="dialog-foot">
+      {% if entry.progress %}
+      <button type="submit" form="progress-delete" class="btn btn-danger progress-delete" title="Forget the reading progress">{{ icon('trash', 16) }} Reset</button>
+      {% endif %}
+      <button type="button" class="btn" data-dialog-close>Cancel</button>
+      <button class="btn btn-primary">Save</button>
+    </footer>
+  </form>
+  <form id="progress-delete" method="post" action="/books/{{ book.id }}/progress/delete" data-confirm="Reset the reading progress of “{{ book.title }}”? The book will show as unread." hidden></form>
+</dialog>
 
 <dialog id="edit-dialog" class="dialog" aria-labelledby="edit-title">
   <form method="post" action="/books/{{ book.id }}" enctype="multipart/form-data" class="form">

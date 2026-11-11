@@ -63,24 +63,29 @@
     {% else %}
     <p class="card-sub">Every user has a library folder in the data directory (<code>books/&lt;user id&gt;/</code>), organized as Author/Series/Title. Bookshelf scans all of them on startup: new files are added, entries whose file is gone are removed. Users can also scan their own folder with the Scan button.</p>
     {% endif %}
-    <p class="small muted">
-      {% if scanner.running %}Scanning…{% elif scanner.last_result %}
-      Last scan {{ scanner.last_result.finished_at.strftime('%Y-%m-%d %H:%M') }}:
-      {{ scanner.last_result.imported }} added, {{ scanner.last_result.removed }} removed{% if scanner.last_result.error %} · failed: {{ scanner.last_result.error }}{% endif %}.
-      {% else %}No scan has finished yet.{% endif %}
-    </p>
-    <div class="actions">
-      <form method="post" action="/settings/scan">
-        <button class="btn btn-primary" type="submit"{% if scanner.running %} disabled{% endif %}>{{ icon('sync', 18) }} Scan {{ 'now' if scanner.shared else 'all folders now' }}</button>
-      </form>
-      <form method="post" action="/settings/scan-interval" class="form">
-        <label class="field-label" for="scan-interval">Scan automatically</label>
-        <select id="scan-interval" name="minutes" onchange="this.form.submit()">
+    <div class="setting-rows">
+      <form method="post" action="/settings/scan-interval" class="setting-row">
+        <label class="setting-label" for="scan-interval">Scan automatically</label>
+        <select class="select select-sm" id="scan-interval" name="minutes" onchange="this.form.submit()">
           {% for minutes, label in scan_choices %}
           <option value="{{ minutes }}"{% if minutes == scanner.interval_minutes %} selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
+        <noscript><button class="btn btn-sm">Save</button></noscript>
       </form>
+      <div class="setting-row">
+        <span class="setting-label">
+          {% if scanner.running %}Scanning…{% elif scanner.last_result %}Last scan {{ scanner.last_result.finished_at|timeago }}
+          <span class="muted">· {{ scanner.last_result.imported }} added, {{ scanner.last_result.removed }} removed{% if scanner.last_result.error %} · failed: {{ scanner.last_result.error }}{% endif %}</span>
+          {% else %}No scan has finished yet{% endif %}
+        </span>
+        {% if not scanner.shared %}
+        {# The Scan button at the top only scans your own folder; this one scans everyone's. #}
+        <form method="post" action="/settings/scan">
+          <button class="btn btn-sm" type="submit"{% if scanner.running %} disabled{% endif %}>{{ icon('sync', 15) }} Scan all users</button>
+        </form>
+        {% endif %}
+      </div>
     </div>
   </section>
 

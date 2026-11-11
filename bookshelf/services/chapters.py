@@ -29,10 +29,35 @@ _EPUB_TYPE = "{http://www.idpf.org/2007/ops}type"
 
 @dataclass(frozen=True)
 class Outline:
-    """Spine length and the table of contents as (spine index, title), in reading order."""
+    """Spine length and the table of contents as (spine index, title), in reading order.
+    ``spine_sizes`` (uncompressed bytes per spine item) turns positions into percentages."""
 
     spine_length: int
     toc: tuple[tuple[int, str], ...]
+    spine_sizes: tuple[int, ...] = ()
+
+    @property
+    def chapter_total(self) -> int:
+        return len(self.toc) if self.toc else self.spine_length
+
+    def fraction_at(self, index: int) -> float:
+        """Share of the book before spine item ``index``."""
+        total = sum(self.spine_sizes)
+        if not total:
+            return index / self.spine_length if self.spine_length else 0.0
+        return sum(self.spine_sizes[:index]) / total
+
+    def index_at(self, fraction: float) -> int:
+        """Spine item that contains ``fraction`` of the book."""
+        total = sum(self.spine_sizes)
+        if not total:
+            return min(self.spine_length - 1, max(0, int(fraction * self.spine_length)))
+        position = fraction * total
+        for index, size in enumerate(self.spine_sizes):
+            position -= size
+            if position < 0:
+                return index
+        return len(self.spine_sizes) - 1
 
 
 @dataclass(frozen=True)
@@ -54,11 +79,9 @@ def spine_index(progress: str | None) -> int | None:
     return None
 
 
-def chapter_at(storage: Storage, book: Book, progress: str | None) -> Chapter | None:
+def outline_of(storage: Storage, book: Book) -> Outline | None:
+    """Spine and table of contents of an EPUB, or None for other formats and broken files."""
     if book.format != "epub":
-        return None
-    index = spine_index(progress)
-    if index is None or index < 0:
         return None
     path = storage.find_book_file(book)
     if path is None:
@@ -68,7 +91,27 @@ def chapter_at(storage: Storage, book: Book, progress: str | None) -> Chapter | 
         outline = _outline(str(path), stat.st_mtime_ns, stat.st_size)
     except (OSError, ValueError, KeyError, ET.ParseError, zipfile.BadZipFile):
         return None
-    return chapter_in(outline, index)
+    return outline if outline.spine_length else None
+
+
+def chapter_at(storage: Storage, book: Book, progress: str | None) -> Chapter | None:
+    index = spine_index(progress)
+    if index is None or index < 0:
+        return None
+    outline = outline_of(storage, book)
+    return chapter_in(outline, index) if outline else None
+
+
+def xpointer(index: int) -> str:
+    """KOReader XPointer for the start of spine item ``index``."""
+    return f"/body/DocFragment[{index + 1}]/body"
+
+
+def chapter_start(outline: Outline, number: int) -> int:
+    """Spine item where chapter ``number`` (1-based, as counted by ``chapter_in``) starts."""
+    if outline.toc:
+        return outline.toc[number - 1][0]
+    return number - 1
 
 
 def chapter_in(outline: Outline, index: int) -> Chapter | None:
@@ -101,11 +144,15 @@ def _outline(path: str, _mtime_ns: int, _size: int) -> Outline:
             item.get("id"): item for item in package.findall(".//opf:manifest/opf:item", NS)
         }
         spine_ids = [ref.get("idref") for ref in package.findall(".//opf:spine/opf:itemref", NS)]
+        sizes = {info.filename: info.file_size for info in archive.infolist()}
         position = {}
+        spine_sizes = []
         for i, idref in enumerate(spine_ids):
             item = manifest.get(idref)
-            if item is not None and item.get("href"):
-                position.setdefault(_join(base, item.get("href", "")), i)
+            href = _join(base, item.get("href", "")) if item is not None else ""
+            if href:
+                position.setdefault(href, i)
+            spine_sizes.append(sizes.get(href, 0))
 
         entries: list[tuple[str, str]] = []  # (archive path, title)
         nav = next(
@@ -125,7 +172,7 @@ def _outline(path: str, _mtime_ns: int, _size: int) -> Outline:
                 entries = _ncx_entries(archive, _join(base, ncx.get("href", "")))
 
     toc = tuple((position[href], title) for href, title in entries if href in position)
-    return Outline(len(spine_ids), toc)
+    return Outline(len(spine_ids), toc, tuple(spine_sizes))
 
 
 def _join(base: str, href: str) -> str:

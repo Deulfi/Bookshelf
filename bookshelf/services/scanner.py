@@ -17,6 +17,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
+from ..db import utcnow
 from ..models import User
 from ..storage import Storage
 from . import library as library_service
@@ -73,7 +74,7 @@ class LibraryScanner:
         try:
             self._started_at = time.monotonic()
             messages: list[str] = []
-            result = ScanResult(finished_at=datetime.now())
+            result = ScanResult(finished_at=utcnow())
             try:
                 with self._session_factory() as db:
                     for user in self._users(db, user_id):
@@ -85,7 +86,7 @@ class LibraryScanner:
                 print(f"[scan] error: {error}", flush=True)
             result.imported = sum(m.startswith("imported ") for m in messages)
             result.removed = sum(m.startswith("removed ") for m in messages)
-            result.finished_at = datetime.now()
+            result.finished_at = utcnow()
             self.last_result = result
             return result
         finally:

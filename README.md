@@ -44,6 +44,7 @@ Everything runs in one small Docker container with a single SQLite database.
   (ComicInfo) and PDF files. Other formats fall back to `Author - Title.ext` file names.
 - **KOReader progress sync.** Built-in server that is compatible with KOReader's *Progress sync* plugin.
   Your library shows reading progress, a *Continue reading* row, and Reading/Unread/Finished filters.
+  On a book's page you can set the progress by percentage or chapter, or reset it.
 - **OPDS catalog.** Browse, search and download your books directly from your e-reader.
 - **Books on your e-reader.** Let KOReader keep your whole library, your unread books or a hand-picked
   selection ("Send to e-reader") in sync on the device automatically.
@@ -77,6 +78,15 @@ which is not tracked by Git, so `docker-compose.yml` never needs local changes.
 Data (database, books, covers) is stored in the `bookshelf-data` volume, mounted at `/data`.
 If you prefer a bind mount instead, make sure the directory is writable by UID 1000.
 
+### Prebuilt image
+
+Every commit on `main` is published as `ghcr.io/deulfi/bookshelf:latest` (amd64 and arm64), and
+release tags as `ghcr.io/deulfi/bookshelf:<version>`. To use it instead of building locally,
+replace the `build:` and `image:` lines in `docker-compose.yml` with
+`image: ghcr.io/deulfi/bookshelf:latest`, and update with `docker compose pull && docker compose up -d`. Proxmox VE (9.1 and newer) can pull
+the same image as an LXC template (*CT Templates → Pull from OCI Registry*); keep `/data` on a
+mount point so it survives replacing the container.
+
 ### Configuration
 
 Set these in `.env` (see [.env.example](.env.example)). All of them are optional.
@@ -101,7 +111,8 @@ Books are stored as `Author/Series/Title.ext`. Without `BOOKSHELF_INGEST_DIR` ev
 own library folder, `<data dir>/books/<user id>/` (`/data/books/<user id>/` in Docker). With it,
 all books live in that one shared folder. Uploads go into the library folder, and files you copy
 there yourself are picked up by a scan: on startup, with the **Scan** button next to Upload, or
-automatically on an interval an administrator picks under *Settings → Library folders*. A scan also
+automatically on an interval an administrator picks under *Settings → Library folders* (where
+administrators can also scan every user's folder at once). A scan also
 removes entries whose file was deleted. Files uploaded by older versions under random names are
 renamed to the `Author/Series/Title` layout on the first scan. With a shared folder only
 administrators can scan, and new files found there belong to the first administrator.

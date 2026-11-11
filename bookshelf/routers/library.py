@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 from ..deps import DB, AppSettings, AppStorage, CurrentUser
 from ..models import User
-from ..services import chapters, library, reading_stats
+from ..services import chapters, library, progress, reading_stats
 from ..services.library import BookEntry
 from ..services.metadata.base import parse_float
 from ..templating import render
@@ -149,23 +149,31 @@ def upload_book(
     )
 
 
-@router.get("/books/{book_id}")
-def book_page(
-    request: Request, db: DB, user: CurrentUser, storage: AppStorage, book_id: int
+def _render_book(
+    request: Request,
+    storage: AppStorage,
+    user: User,
+    entry: BookEntry,
+    *,
+    error: str | None = None,
+    progress_error: str | None = None,
 ) -> Response:
-    entry = _entry_or_404(db, user, book_id)
     stats = reading_stats.book_stats(
         reading_stats.statistics_path(storage, user.id), entry.book.partial_md5
     )
     seconds_left = None
     if stats and entry.status == "reading":
         seconds_left = stats.seconds_left(entry.progress.percentage)
+    outline = chapters.outline_of(storage, entry.book)
     chapter = None
-    if entry.progress is not None:
-        chapter = chapters.chapter_at(storage, entry.book, entry.progress.progress)
+    if entry.progress is not None and outline is not None:
+        index = chapters.spine_index(entry.progress.progress)
+        if index is not None and index >= 0:
+            chapter = chapters.chapter_in(outline, index)
     return render(
         request,
         "book.html",
+        status_code=422 if error or progress_error else 200,
         user=user,
         nav="library",
         entry=entry,
@@ -173,7 +181,55 @@ def book_page(
         stats=stats,
         seconds_left=seconds_left,
         chapter=chapter,
+        chapter_total=outline.chapter_total if outline else None,
+        chapter_kind="Chapter" if outline and outline.toc else "Section",
+        error=error,
+        progress_error=progress_error,
     )
+
+
+@router.get("/books/{book_id}")
+def book_page(
+    request: Request, db: DB, user: CurrentUser, storage: AppStorage, book_id: int
+) -> Response:
+    return _render_book(request, storage, user, _entry_or_404(db, user, book_id))
+
+
+@router.post("/books/{book_id}/progress")
+def set_progress(
+    request: Request,
+    db: DB,
+    user: CurrentUser,
+    storage: AppStorage,
+    book_id: int,
+    mode: Annotated[str, Form()] = "percent",
+    percent: Annotated[str, Form()] = "",
+    chapter: Annotated[str, Form()] = "",
+) -> Response:
+    """Set the reading progress by hand (book page dialog)."""
+    entry = _entry_or_404(db, user, book_id)
+    try:
+        if mode == "chapter":
+            number = int(chapter.strip()) if chapter.strip().isdigit() else None
+            if number is None:
+                raise progress.ProgressError("Enter a chapter number.")
+            progress.set_manual_progress(db, storage, entry.book, chapter=number)
+        else:
+            value = parse_float(percent.strip().rstrip("%").replace(",", "."))
+            if value is None:
+                raise progress.ProgressError("Enter a percentage from 0 to 100.")
+            progress.set_manual_progress(db, storage, entry.book, percent=value)
+    except progress.ProgressError as exc:
+        return _render_book(request, storage, user, entry, progress_error=str(exc))
+    return RedirectResponse(f"/books/{book_id}", status_code=303)
+
+
+@router.post("/books/{book_id}/progress/delete")
+def delete_progress(db: DB, user: CurrentUser, book_id: int) -> Response:
+    """Forget the reading progress (the book becomes unread)."""
+    entry = _entry_or_404(db, user, book_id)
+    progress.delete_progress(db, user.id, entry.book.partial_md5)
+    return RedirectResponse(f"/books/{book_id}", status_code=303)
 
 
 @router.post("/books/{book_id}")
@@ -212,16 +268,7 @@ def update_book(
                 library.replace_cover(db, storage, entry.book, data)
             except library.LibraryError as exc:
                 entry = _entry_or_404(db, user, book_id)
-                return render(
-                    request,
-                    "book.html",
-                    status_code=422,
-                    user=user,
-                    nav="library",
-                    entry=entry,
-                    book=entry.book,
-                    error=str(exc),
-                )
+                return _render_book(request, storage, user, entry, error=str(exc))
     return RedirectResponse(f"/books/{book_id}", status_code=303)
 
 

@@ -74,14 +74,16 @@ def test_interval_is_saved_and_validated(app_client):
 def test_settings_page_shows_scan_card_and_button_works(app_client):
     client, _app = app_client
     page = client.get("/settings")
-    assert "Scan now" in page.text
+    assert "Scan automatically" in page.text
+    # a shared folder is scanned with the Scan button at the top; the card has no second one
+    assert "Scan all users" not in page.text
     response = client.post("/settings/scan", follow_redirects=False)
     assert response.status_code == 303
 
 
 def test_scan_card_covers_user_folders_without_ingest_dir(admin_client: TestClient):
     page = admin_client.get("/settings").text
-    assert "Scan all folders now" in page
+    assert "Scan all users" in page
     assert "data-scan-trigger" in admin_client.get("/").text
 
 

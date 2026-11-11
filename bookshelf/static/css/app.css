@@ -149,6 +149,15 @@ strong { font-weight: 650; }
 .btn-danger:hover { background: var(--danger-soft); border-color: transparent; }
 .btn-toggle.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .btn-sm { height: 32px; padding: 0 11px; font-size: 13.5px; gap: 6px; }
+.select-sm { height: 34px; padding: 0 32px 0 13px; font-size: 13.5px; background-position: right 12px center; }
+/* label on the left, control on the right, separated by hairlines (settings cards) */
+.setting-rows { display: grid; margin-top: 4px; border-top: 1px solid var(--border); }
+.setting-row {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+  min-height: 52px; padding: 9px 0; border-bottom: 1px solid var(--border);
+}
+.setting-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.setting-label { font-size: 14.5px; min-width: 0; }
 .btn-block { width: 100%; }
 .btn.is-copied { color: var(--accent); border-color: var(--accent); }
 .icon-btn {
@@ -477,7 +486,19 @@ textarea.input { height: auto; min-height: 120px; padding: 10px 12px; line-heigh
 .eyebrow { margin-bottom: 8px; color: var(--accent); font-size: 14px; font-weight: 650; }
 .detail-title { font-family: var(--font-serif); font-size: clamp(28px, 4vw, 42px); font-weight: 600; letter-spacing: -0.015em; line-height: 1.12; }
 .detail-author { margin-top: 10px; color: var(--muted); font-size: 18px; }
-.progress-card { margin: 26px 0 20px; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.progress-card { position: relative; margin: 26px 0 20px; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.progress-edit { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; }
+.progress-card .progress-head { padding-right: 34px; }
+.progress-card > p.no-margin { padding-right: 34px; }
+/* progress dialog: show the field of the chosen mode */
+.progress-mode { margin: 0; }
+.progress-form:has(#mode-percent:checked) .field-chapter,
+.progress-form:has(#mode-chapter:checked) .field-percent { display: none; }
+.progress-form .small { margin: 0; }
+.input-suffix { display: flex; align-items: center; gap: 10px; }
+.input-suffix .input { max-width: 140px; }
+.input-suffix span { color: var(--muted); white-space: nowrap; }
+.progress-delete { margin-right: auto; }
 .progress-card p { display: flex; align-items: center; gap: 6px; }
 .progress-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
 .progress-head strong { font-size: 22px; font-weight: 700; }

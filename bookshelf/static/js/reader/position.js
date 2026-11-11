@@ -20,8 +20,9 @@ export function deviceId() {
 }
 
 /**
- * Local record: { progress, cfi, fraction, time } where progress is what was (or will be) sent
- * to the server and time is when this browser was last at that position (ms).
+ * Local record: { progress, cfi, fraction, time, synced } where progress is what was (or will
+ * be) sent to the server, time is when this browser was last at that position (ms) and synced
+ * says the server received it.
  * Remote record: { progress, percentage, device, device_id, timestamp (s) } or null.
  */
 export class Position {
@@ -54,14 +55,15 @@ export class Position {
         }
     }
 
+    /** The server record, null if there is none, undefined if the server can't be reached. */
     async remote() {
         try {
             const res = await fetch(this.#url, { cache: 'no-store' })
-            if (!res.ok) return null
+            if (!res.ok) return undefined
             const data = await res.json()
             return data.progress ? data : null
         } catch {
-            return null // offline
+            return undefined // offline
         }
     }
 
@@ -84,6 +86,27 @@ export class Position {
         this.#timer = setTimeout(() => this.flush(), REMOTE_DELAY)
     }
 
+    /** Forget this browser's copy (the progress was reset on the server). */
+    clear() {
+        this.#pending = null
+        clearTimeout(this.#timer)
+        try {
+            localStorage.removeItem(this.#key)
+        } catch {
+            // nothing to clear
+        }
+    }
+
+    #markSynced(record) {
+        try {
+            const stored = this.local()
+            if (stored?.time === record.time)
+                localStorage.setItem(this.#key, JSON.stringify({ ...stored, synced: true }))
+        } catch {
+            // the flag only matters after a reset on the server
+        }
+    }
+
     async flush() {
         clearTimeout(this.#timer)
         this.#timer = null
@@ -103,6 +126,7 @@ export class Position {
                 keepalive: true,
             })
             if (!res.ok) throw new Error(res.statusText)
+            this.#markSynced(record)
         } catch {
             this.#pending ??= record // offline: retry with the next update
         }
@@ -110,12 +134,14 @@ export class Position {
 }
 
 /**
- * Which position to open: 'local', 'remote' or 'conflict' (another device moved on since this
- * browser was last here, to a different place). `seen` is the newest remote timestamp (s) this
- * browser already dealt with.
+ * Which position to open: 'local', 'remote', 'conflict' (another device moved on since this
+ * browser was last here, to a different place) or 'reset' (the server had this browser's
+ * position and no longer has it: the progress was reset). `seen` is the newest remote
+ * timestamp (s) this browser already dealt with.
  */
 export function compare(local, remote, device, seen = 0) {
-    if (!remote) return 'local'
+    if (remote === undefined) return 'local' // offline: nothing to compare with
+    if (!remote) return local?.synced ? 'reset' : 'local'
     if (!local) return 'remote'
     if (remote.progress === local.progress || remote.progress === local.cfi) return 'local'
     if (remote.device_id && remote.device_id === device) return 'local'
