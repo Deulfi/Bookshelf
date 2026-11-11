@@ -108,6 +108,22 @@ class ReaderProfile(Base):
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 
 
+class WebReadingTime(Base):
+    """Seconds read in the browser reader, per book and hour. Merged with KOReader's
+    ``statistics.sqlite3`` on the stats pages (see ``services/reading_stats.py``)."""
+
+    __tablename__ = "web_reading_time"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    # The book's partial MD5, like ReadingProgress.document and KOReader's ``book.md5``.
+    document: Mapped[str] = mapped_column(String(32), primary_key=True)
+    hour: Mapped[int] = mapped_column(primary_key=True)  # unix seconds, start of the hour
+    seconds: Mapped[int] = mapped_column(default=0)
+    last_read: Mapped[int] = mapped_column(default=0)  # unix seconds of the latest addition
+
+
 class ReadingProgress(Base):
     """Progress as reported by KOReader, keyed by its document hash (not by book id)."""
 

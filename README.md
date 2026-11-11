@@ -48,8 +48,9 @@ Everything runs in one small Docker container with a single SQLite database.
 - **OPDS catalog.** Browse, search and download your books directly from your e-reader.
 - **Books on your e-reader.** Let KOReader keep your whole library, your unread books or a hand-picked
   selection ("Send to e-reader") in sync on the device automatically.
-- **Reading statistics.** Sync KOReader's reading statistics via the built-in WebDAV server to see
-  total reading time, streaks, a reading calendar, time per book and an estimate of the time left.
+- **Reading statistics.** Total reading time, streaks, a reading calendar, time per book and an
+  estimate of the time left. Time in the web reader is counted automatically; KOReader's statistics
+  are added when you sync them via the built-in WebDAV server.
 - **Read in the browser.** EPUB, MOBI, AZW3, FB2 and CBZ open in a built-in reader (foliate-js)
   with scroll or page mode, auto-hiding bars, themes and font settings. In scroll mode it moves on
   to the next chapter when you keep scrolling. It continues where KOReader or Readest stopped, and
@@ -162,7 +163,8 @@ storage server. Bookshelf provides one at `/webdav`:
    its main folder, then run *Synchronize now*.
 
 Do this on every device. KOReader merges the statistics of all devices; Bookshelf only reads the
-synced `statistics.sqlite3`. Menu names can differ slightly between KOReader versions.
+synced `statistics.sqlite3` and adds the time spent in the web reader to it (page counts and the
+time-left estimate come from KOReader only). Menu names can differ slightly between KOReader versions.
 
 > Run Bookshelf behind a reverse proxy with HTTPS if you want to reach it from outside your
 > home network. KOReader and OPDS clients send your credentials with every request.

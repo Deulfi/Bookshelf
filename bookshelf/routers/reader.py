@@ -12,7 +12,7 @@ from ..deps import DB, AppStorage, CurrentUser
 from ..formats import READABLE_FORMATS
 from ..icons import icon
 from ..models import ReadingProgress, User
-from ..services import library, progress, reader_config
+from ..services import library, progress, reader_config, reading_stats
 from ..services.library import BookEntry
 from ..templating import render
 
@@ -86,6 +86,8 @@ class PositionBody(BaseModel):
     fraction: float
     device: str = "Web reader"
     device_id: str = ""
+    # Active reading time since the last successful update, for the reading statistics.
+    seconds: float = 0
 
 
 def _position(record: ReadingProgress | None) -> dict[str, Any]:
@@ -125,6 +127,7 @@ def put_position(body: PositionBody, db: DB, user: CurrentUser, book_id: int) ->
         device=body.device.strip() or "Web reader",
         device_id=body.device_id.strip(),
     )
+    reading_stats.add_web_time(db, user.id, entry.book.partial_md5, body.seconds)
     return JSONResponse(_position(record))
 
 

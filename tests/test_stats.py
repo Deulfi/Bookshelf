@@ -7,9 +7,17 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
+from bookshelf.models import User, WebReadingTime
 from bookshelf.security import md5_hex
-from bookshelf.services.reading_stats import CalendarDay, build_calendar, load_stats
+from bookshelf.services.reading_stats import (
+    MAX_WEB_SECONDS,
+    CalendarDay,
+    book_stats,
+    build_calendar,
+    load_stats,
+)
 
 from .conftest import ADMIN, make_epub, upload
 from .koreader_stats import make_statistics_db
@@ -140,3 +148,89 @@ def test_stats_page_and_book_page(admin_client: TestClient, tmp_path: Path) -> N
     book_page = admin_client.get(f"/books/{book_id}").text
     assert "40 min read" in book_page
     assert "about 1 h left" in book_page  # 60 s/page × 60 remaining pages
+
+
+# --- Web reader time ---------------------------------------------------------------------------
+
+
+def _admin_id(client: TestClient) -> int:
+    with client.app.state.sessionmaker() as db:
+        return db.scalar(select(User.id).where(User.username == ADMIN[0]))
+
+
+def _put_position(client: TestClient, book_id: int, seconds: float) -> None:
+    response = client.put(
+        f"/api/books/{book_id}/position",
+        json={"progress": "/body/DocFragment[1]/body/p[1]", "fraction": 0.1, "seconds": seconds},
+    )
+    assert response.status_code == 200
+
+
+def test_web_time_is_recorded_per_hour_and_clamped(admin_client: TestClient) -> None:
+    book_id = upload(admin_client, "a.epub", make_epub(title="Dracula")).json()["id"]
+    _put_position(admin_client, book_id, 30)
+    _put_position(admin_client, book_id, 45.4)
+    _put_position(admin_client, book_id, -100)  # ignored
+    _put_position(admin_client, book_id, 999_999)  # clamped to an hour
+    with admin_client.app.state.sessionmaker() as db:
+        rows = db.scalars(select(WebReadingTime)).all()
+    assert len(rows) == 1
+    assert rows[0].seconds == 30 + 45 + MAX_WEB_SECONDS
+    assert rows[0].last_read > 0
+
+
+def test_web_time_only(admin_client: TestClient, tmp_path: Path) -> None:
+    book_id = upload(admin_client, "a.epub", make_epub(title="Dracula")).json()["id"]
+    _put_position(admin_client, book_id, 25 * 60)
+
+    stats_page = admin_client.get("/stats").text
+    assert "No statistics yet" not in stats_page
+    assert "25 min" in stats_page
+    assert f'href="/books/{book_id}"' in stats_page
+    assert "0 pages" not in stats_page
+    assert "1 day" in stats_page  # streak
+
+    book_page = admin_client.get(f"/books/{book_id}").text
+    assert "25 min read" in book_page
+    assert " left" not in book_page.split("reading-time")[1][:200]  # no pages, no estimate
+
+    # Another user sees none of it.
+    with admin_client.app.state.sessionmaker() as db:
+        stats = load_stats(tmp_path / "missing", ZoneInfo("UTC"), db=db, user_id=999)
+    assert stats is None
+
+
+def test_web_time_merges_with_koreader(admin_client: TestClient, tmp_path: Path) -> None:
+    book_id = upload(admin_client, "a.epub", make_epub(title="Dracula")).json()["id"]
+    page = admin_client.get(f"/books/{book_id}").text
+    md5 = page.split('KOReader document ID</dt><dd class="mono">')[1][:32]
+    now = int(datetime.now(UTC).timestamp())
+    path = tmp_path / "statistics.sqlite3"
+    make_statistics_db(
+        path,
+        [
+            {
+                "title": "Dracula",
+                "md5": md5,
+                "pages": 100,
+                "reads": [(now - 7200 + i * 60, i, 60) for i in range(1, 11)],
+            },
+            {"title": "Other", "md5": "f" * 32, "pages": 10, "reads": [(now - 3600, 1, 300)]},
+        ],
+    )
+    _put_position(admin_client, book_id, 20 * 60)
+
+    with admin_client.app.state.sessionmaker() as db:
+        user_id = _admin_id(admin_client)
+        stats = load_stats(path, ZoneInfo("UTC"), db=db, user_id=user_id)
+        book = book_stats(path, md5, db=db, user_id=user_id)
+    assert stats.total_seconds == 10 * 60 + 300 + 20 * 60
+    assert stats.pages_read == 11  # pages come from KOReader only
+    assert [b.title for b in stats.books] == ["Dracula", "Other"]  # one row per book, newest first
+    assert stats.books[0].seconds == 30 * 60
+    assert stats.books[0].pages_read == 10
+    assert book.seconds == 30 * 60
+    assert book.seconds_left(0.5) == 60 * 50  # KOReader's 60 s/page, web time left out
+
+    # Without a database the KOReader numbers are unchanged.
+    assert load_stats(path, ZoneInfo("UTC")).total_seconds == 10 * 60 + 300

@@ -1,4 +1,4 @@
-"""Reading statistics page (data synced from KOReader via WebDAV)."""
+"""Reading statistics page (KOReader's statistics synced via WebDAV, plus the web reader)."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ def stats_page(
     request: Request, db: DB, user: CurrentUser, storage: AppStorage, settings: AppSettings
 ) -> Response:
     path = reading_stats.statistics_path(storage, user.id)
-    stats = reading_stats.load_stats(path, settings.tzinfo)
+    stats = reading_stats.load_stats(path, settings.tzinfo, db=db, user_id=user.id)
     books = {}
     if stats:
         books = library.books_by_document(db, user, [b.md5 for b in stats.books if b.md5])

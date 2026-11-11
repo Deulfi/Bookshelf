@@ -1,7 +1,11 @@
 // Reading position. The server copy is the KOReader sync record that KOReader and Readest use
 // too, so EPUB positions are sent as KOReader XPointers. This browser additionally keeps its
 // exact foliate CFI in localStorage, used when the server still holds what this browser sent.
+//
+// It also counts reading time for the statistics page: the time between two page moves, at
+// most MAX_PAGE_TIME each (like KOReader's default), and nothing while the tab is hidden.
 const REMOTE_DELAY = 5000
+const MAX_PAGE_TIME = 120_000
 const DEVICE_KEY = 'bookshelf-reader-device'
 export const DEVICE_NAME = 'Web reader'
 
@@ -31,6 +35,9 @@ export class Position {
     #device
     #timer = null
     #pending = null
+    #last = null // the latest record, re-sent when only reading time is left to send
+    #seconds = 0 // reading time not yet sent
+    #activeSince = null // ms; null while paused
 
     constructor({ document, url }) {
         this.#url = url
@@ -70,6 +77,7 @@ export class Position {
     /** Remember a location; sent to the server after a pause in reading. */
     update(location) {
         if (!location?.cfi) return
+        this.#tick()
         const record = {
             progress: location.xpointer || location.cfi,
             cfi: location.cfi,
@@ -82,13 +90,34 @@ export class Position {
             // ignore: the server copy is the primary one
         }
         this.#pending = record
+        this.#last = record
         clearTimeout(this.#timer)
         this.#timer = setTimeout(() => this.flush(), REMOTE_DELAY)
+    }
+
+    /** Stop counting reading time (the tab is hidden or closed). */
+    pause() {
+        this.#tick()
+        this.#activeSince = null
+    }
+
+    /** Count reading time again (the tab is shown again). */
+    resume() {
+        this.#activeSince ??= Date.now()
+    }
+
+    #tick() {
+        const now = Date.now()
+        if (this.#activeSince !== null)
+            this.#seconds += Math.min(Math.max(now - this.#activeSince, 0), MAX_PAGE_TIME) / 1000
+        this.#activeSince = now
     }
 
     /** Forget this browser's copy (the progress was reset on the server). */
     clear() {
         this.#pending = null
+        this.#last = null
+        this.#seconds = 0
         clearTimeout(this.#timer)
         try {
             localStorage.removeItem(this.#key)
@@ -110,9 +139,11 @@ export class Position {
     async flush() {
         clearTimeout(this.#timer)
         this.#timer = null
-        const record = this.#pending
+        const seconds = Math.round(this.#seconds)
+        const record = this.#pending ?? (seconds > 0 ? this.#last : null)
         if (!record) return
         this.#pending = null
+        this.#seconds -= seconds // taken now, so overlapping flushes don't send it twice
         try {
             const res = await fetch(this.#url, {
                 method: 'PUT',
@@ -122,6 +153,7 @@ export class Position {
                     fraction: record.fraction,
                     device: DEVICE_NAME,
                     device_id: this.#device,
+                    seconds,
                 }),
                 keepalive: true,
             })
@@ -129,6 +161,7 @@ export class Position {
             this.#markSynced(record)
         } catch {
             this.#pending ??= record // offline: retry with the next update
+            this.#seconds += seconds
         }
     }
 }

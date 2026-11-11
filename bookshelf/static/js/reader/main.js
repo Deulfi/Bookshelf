@@ -149,11 +149,14 @@ const sync = new Sync({
     engine, position, prefs, dialog: document.getElementById('sync-dialog'),
 })
 let started = false
-const flush = () => { position.flush(); prefs.flush() }
+const flush = () => { position.pause(); position.flush(); prefs.flush() }
 addEventListener('pagehide', flush)
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') flush()
-    else if (started) sync.check() // another device may have read on meanwhile
+    else if (started) {
+        position.resume()
+        sync.check() // another device may have read on meanwhile
+    }
 })
 
 const { target, fallback, push } = await sync.initial()

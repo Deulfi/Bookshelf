@@ -5,8 +5,8 @@
 <div class="page-head">
   <h1 class="page-title">Reading statistics</h1>
   <p class="muted">
-    {% if synced_at %}{{ icon('sync', 14) }} Synced from KOReader {{ synced_at|timeago }}
-    {% else %}Synced from KOReader’s reading statistics{% endif %}
+    {% if synced_at %}{{ icon('sync', 14) }} KOReader synced {{ synced_at|timeago }} · includes the web reader
+    {% else %}From the web reader and KOReader’s reading statistics{% endif %}
   </p>
 </div>
 
@@ -25,8 +25,13 @@
     <strong class="stat-value">{{ stats.streak_days }} day{{ '' if stats.streak_days == 1 else 's' }}</strong>
   </div>
   <div class="stat-tile">
+    {% if stats.pages_read %}
     <span class="stat-label">Pages read</span>
     <strong class="stat-value">{{ stats.pages_read|thousands }}</strong>
+    {% else %}{# the web reader has no pages; only KOReader counts them #}
+    <span class="stat-label">Reading days</span>
+    <strong class="stat-value">{{ stats.days_read|thousands }}</strong>
+    {% endif %}
   </div>
 </div>
 
@@ -72,7 +77,7 @@
         </div>
         <div class="stat-book-numbers">
           <strong>{{ item.seconds|duration }}</strong>
-          <span>{{ item.pages_read|thousands }} page{{ '' if item.pages_read == 1 else 's' }} · {{ item.last_read|timeago }}</span>
+          <span>{% if item.pages_read %}{{ item.pages_read|thousands }} page{{ '' if item.pages_read == 1 else 's' }} · {% endif %}{{ item.last_read|timeago }}</span>
         </div>
       {% if book %}</a>{% else %}</div>{% endif %}
     </li>
@@ -84,7 +89,7 @@
 {% else %}
 <section class="card stats-empty">
   <h2>{{ icon('chart', 18) }} No statistics yet</h2>
-  <p class="card-sub">KOReader records how long you read each book. Sync its statistics to Bookshelf to see them here and on every book page.</p>
+  <p class="card-sub">Time you spend in the web reader is counted automatically. KOReader records how long you read each book too: sync its statistics to Bookshelf to add them here and on every book page.</p>
   <ol class="steps">
     <li>In KOReader, open <strong>Cloud storage</strong> and add a <strong>WebDAV</strong> server with the address <code class="mono">{{ webdav_url }}</code> and your Bookshelf username and password.</li>
     <li>Open <strong>Reading statistics → Settings → Cloud sync</strong> and choose that server’s main folder.</li>

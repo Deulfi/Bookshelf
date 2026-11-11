@@ -22,7 +22,7 @@ bookshelf/
   main.py            create_app(): wires settings, DB, storage, routers, error handlers
   config.py          Settings dataclass, read from BOOKSHELF_* environment variables
   db.py              engine, Base, utcnow(), run_migrations() (Alembic runs on startup)
-  models.py          User, AuthSession, Book, ReadingProgress, ReaderProfile
+  models.py          User, AuthSession, Book, ReadingProgress, ReaderProfile, WebReadingTime
   deps.py            FastAPI dependencies + Annotated aliases (DB, CurrentUser, AdminUser, ...)
   storage.py         file layout under the data dir (books/<user id>/ library folders, covers/,
                      files/, tmp/, reader/); library_root(user_id) is where a user's books live
@@ -33,7 +33,7 @@ bookshelf/
   routers/           thin HTTP layer: auth, library, reader, stats, account, admin, kosync,
                      opds, webdav
   services/          business logic, no HTTP: library, users, sessions, progress, covers,
-                     hashing, files (WebDAV store), reading_stats (KOReader statistics),
+                     hashing, files (WebDAV store), reading_stats (KOReader + web reader stats),
                      reader_config (web reader config layers and preferences),
                      chapters (chapter of a sync position, for book pages)
   reader/defaults/   built-in web reader config: layout.json, settings.json, themes.json
@@ -99,7 +99,8 @@ scripts/dev_seed.py  demo data for local development
   `If-Match` (412 on mismatch). Keep hrefs as absolute paths and keep the store flat.
 - **Reading statistics** (`services/reading_stats.py`): KOReader owns `statistics.sqlite3`
   (tables `book`, `page_stat_data`). Open it read-only, never modify it, and match books via
-  `book.md5` = `Book.partial_md5`.
+  `book.md5` = `Book.partial_md5`. The web reader's time is stored separately (`WebReadingTime`,
+  per book hash and hour, sent with each position update) and merged in at read time.
 
 ## Common extensions
 

@@ -151,6 +151,7 @@ def upload_book(
 
 def _render_book(
     request: Request,
+    db: DB,
     storage: AppStorage,
     user: User,
     entry: BookEntry,
@@ -159,7 +160,10 @@ def _render_book(
     progress_error: str | None = None,
 ) -> Response:
     stats = reading_stats.book_stats(
-        reading_stats.statistics_path(storage, user.id), entry.book.partial_md5
+        reading_stats.statistics_path(storage, user.id),
+        entry.book.partial_md5,
+        db=db,
+        user_id=user.id,
     )
     seconds_left = None
     if stats and entry.status == "reading":
@@ -192,7 +196,7 @@ def _render_book(
 def book_page(
     request: Request, db: DB, user: CurrentUser, storage: AppStorage, book_id: int
 ) -> Response:
-    return _render_book(request, storage, user, _entry_or_404(db, user, book_id))
+    return _render_book(request, db, storage, user, _entry_or_404(db, user, book_id))
 
 
 @router.post("/books/{book_id}/progress")
@@ -220,7 +224,7 @@ def set_progress(
                 raise progress.ProgressError("Enter a percentage from 0 to 100.")
             progress.set_manual_progress(db, storage, entry.book, percent=value)
     except progress.ProgressError as exc:
-        return _render_book(request, storage, user, entry, progress_error=str(exc))
+        return _render_book(request, db, storage, user, entry, progress_error=str(exc))
     return RedirectResponse(f"/books/{book_id}", status_code=303)
 
 
@@ -268,7 +272,7 @@ def update_book(
                 library.replace_cover(db, storage, entry.book, data)
             except library.LibraryError as exc:
                 entry = _entry_or_404(db, user, book_id)
-                return _render_book(request, storage, user, entry, error=str(exc))
+                return _render_book(request, db, storage, user, entry, error=str(exc))
     return RedirectResponse(f"/books/{book_id}", status_code=303)
 
 

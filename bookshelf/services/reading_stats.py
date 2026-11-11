@@ -1,22 +1,31 @@
-"""Reading statistics from KOReader's ``statistics.sqlite3``, synced to Bookshelf via WebDAV.
+"""Reading statistics: KOReader's ``statistics.sqlite3`` merged with the web reader's time.
 
-KOReader owns the file: it downloads it, merges its local data and uploads it again. Bookshelf
-only ever opens it read-only. Books are identified by ``book.md5``, which is the same partial
-MD5 that Bookshelf stores as ``Book.partial_md5``.
+KOReader owns its file (synced via WebDAV): it downloads it, merges its local data and uploads
+it again. Bookshelf only ever opens it read-only. Books are identified by ``book.md5``, which is
+the same partial MD5 that Bookshelf stores as ``Book.partial_md5``.
+
+The browser reader reports its reading time with each position update; it is stored per book
+and hour in ``WebReadingTime`` and added to KOReader's numbers here. The web reader has no
+stable pages, so page counts (and the time-left estimate) come from KOReader only.
 """
 
 from __future__ import annotations
 
 import logging
 import sqlite3
+import time
 from collections import defaultdict
 from contextlib import closing
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from ..models import Book, WebReadingTime
 from ..storage import Storage
 
 log = logging.getLogger(__name__)
@@ -24,6 +33,7 @@ log = logging.getLogger(__name__)
 STATISTICS_FILE = "statistics.sqlite3"
 CALENDAR_WEEKS = 53
 RECENT_BOOKS_LIMIT = 12
+MAX_WEB_SECONDS = 3600  # most reading time accepted from one reader update
 _LEVEL_MINUTES = (15, 30, 60)  # thresholds for calendar intensity levels 2, 3 and 4
 
 
@@ -36,15 +46,16 @@ class StatsBook:
     pages_read: int
     total_pages: int | None
     last_read: datetime  # naive UTC, like other datetimes in Bookshelf
+    web_seconds: int = 0  # part of ``seconds`` read in the web reader (no pages)
 
     def seconds_left(self, fraction_read: float | None = None) -> int | None:
-        """Estimated reading time left, based on this book's average time per page."""
+        """Estimated reading time left, based on this book's average time per KOReader page."""
         if not self.total_pages or self.pages_read <= 0:
             return None
         if fraction_read is None:
             fraction_read = min(self.pages_read / self.total_pages, 1.0)
         remaining_pages = max(self.total_pages * (1 - fraction_read), 0)
-        return round(self.seconds / self.pages_read * remaining_pages)
+        return round((self.seconds - self.web_seconds) / self.pages_read * remaining_pages)
 
 
 @dataclass(frozen=True)
@@ -90,30 +101,173 @@ def last_synced(path: Path) -> datetime | None:
         return None
 
 
-def load_stats(path: Path, tz: ZoneInfo, today: date | None = None) -> ReadingStats | None:
-    """Overall statistics, or None if no (readable) statistics file has been synced yet."""
+def add_web_time(
+    db: Session, user_id: int, document: str, seconds: float, now: int | None = None
+) -> None:
+    """Add reading time reported by the browser reader to the current hour's bucket."""
+    seconds = min(int(seconds), MAX_WEB_SECONDS)
+    if seconds <= 0 or not document:
+        return
+    now = int(time.time()) if now is None else now
+    key = (user_id, document, now - now % 3600)
+    row = db.get(WebReadingTime, key)
+    if row is None:
+        row = WebReadingTime(user_id=user_id, document=document, hour=key[2], seconds=0)
+        db.add(row)
+    row.seconds += seconds
+    row.last_read = now
+    db.commit()
+
+
+def load_stats(
+    path: Path,
+    tz: ZoneInfo,
+    today: date | None = None,
+    *,
+    db: Session | None = None,
+    user_id: int | None = None,
+) -> ReadingStats | None:
+    """Overall statistics from KOReader's file plus the web reader's time (when ``db`` and
+    ``user_id`` are given), or None if there is nothing to show yet."""
+    today = today or datetime.now(tz).date()
+    koreader = _koreader_stats(path, tz)
+    web = db is not None and user_id is not None
+    days: dict[date, int] = defaultdict(int, koreader[0] if koreader else ())
+    if web:
+        for hour, seconds in db.execute(
+            select(WebReadingTime.hour, func.sum(WebReadingTime.seconds))
+            .where(WebReadingTime.user_id == user_id)
+            .group_by(WebReadingTime.hour)
+        ):
+            days[datetime.fromtimestamp(hour, tz).date()] += seconds or 0
+    if koreader is None and not days:
+        return None
+
+    books = koreader[2] if koreader else ()
+    if web:
+        books = _merge_books(path, db, user_id, books)
+    week_start = today - timedelta(days=today.weekday())
+    return ReadingStats(
+        total_seconds=sum(days.values()),
+        year_seconds=sum(s for d, s in days.items() if d.year == today.year and d <= today),
+        week_seconds=sum(s for d, s in days.items() if week_start <= d <= today),
+        pages_read=koreader[1] if koreader else 0,
+        days_read=sum(1 for s in days.values() if s > 0),
+        streak_days=_streak(days, today),
+        calendar=build_calendar(days, today),
+        books=books,
+    )
+
+
+def book_stats(
+    path: Path, md5: str, *, db: Session | None = None, user_id: int | None = None
+) -> StatsBook | None:
+    """Statistics for one book, matched by KOReader's partial MD5, with its web reading time."""
+    koreader = _koreader_book(path, md5)
+    if db is None or user_id is None:
+        return koreader
+    web = _web_books(db, user_id, documents=[md5]).get(md5)
+    return _combine(koreader, web)
+
+
+def _koreader_stats(path: Path, tz: ZoneInfo) -> tuple | None:
     if not path.is_file():
         return None
     stat = path.stat()
-    today = today or datetime.now(tz).date()
-    return _load_stats(str(path), stat.st_mtime_ns, stat.st_size, tz.key, today)
+    return _load_koreader(str(path), stat.st_mtime_ns, stat.st_size, tz.key)
 
 
-def book_stats(path: Path, md5: str) -> StatsBook | None:
-    """Statistics for one book, matched by KOReader's partial MD5."""
+def _koreader_book(path: Path, md5: str) -> StatsBook | None:
     if not path.is_file():
         return None
     stat = path.stat()
     return _book_stats(str(path), stat.st_mtime_ns, stat.st_size, md5)
 
 
+# --- Web reader time ---------------------------------------------------------------------------
+
+
+def _web_books(
+    db: Session, user_id: int, *, documents: list[str] | None = None, limit: int | None = None
+) -> dict[str, StatsBook]:
+    """Web reading time per book: for the given documents, or the most recently read ones."""
+    if documents is not None and not documents:
+        return {}
+    last = func.max(WebReadingTime.last_read)
+    statement = (
+        select(
+            WebReadingTime.document,
+            func.sum(WebReadingTime.seconds),
+            last,
+            func.max(Book.title),
+            func.max(Book.author),
+        )
+        .outerjoin(
+            Book,
+            (Book.user_id == WebReadingTime.user_id)
+            & (Book.partial_md5 == WebReadingTime.document),
+        )
+        .where(WebReadingTime.user_id == user_id)
+        .group_by(WebReadingTime.document)
+        .order_by(last.desc())
+    )
+    if documents is not None:
+        statement = statement.where(WebReadingTime.document.in_(documents))
+    if limit is not None:
+        statement = statement.limit(limit)
+    return {
+        document: StatsBook(
+            title=title or "Removed from the library",
+            authors=author or None,
+            md5=document,
+            seconds=int(seconds or 0),
+            pages_read=0,
+            total_pages=None,
+            last_read=datetime.fromtimestamp(last_read or 0, UTC).replace(tzinfo=None),
+            web_seconds=int(seconds or 0),
+        )
+        for document, seconds, last_read, title, author in db.execute(statement)
+    }
+
+
+def _combine(koreader: StatsBook | None, web: StatsBook | None) -> StatsBook | None:
+    """One book's KOReader statistics plus its web reading time (pages stay KOReader's)."""
+    if koreader is None or web is None:
+        return koreader or web
+    return replace(
+        koreader,
+        seconds=koreader.seconds + web.seconds,
+        web_seconds=koreader.web_seconds + web.seconds,
+        last_read=max(koreader.last_read, web.last_read),
+    )
+
+
+def _merge_books(
+    path: Path, db: Session, user_id: int, koreader: tuple[StatsBook, ...]
+) -> tuple[StatsBook, ...]:
+    """The most recently read books of either source, each with both sources' time."""
+    recent_web = _web_books(db, user_id, limit=RECENT_BOOKS_LIMIT)
+    known = {book.md5 for book in koreader if book.md5}
+    web = recent_web | _web_books(db, user_id, documents=sorted(known - recent_web.keys()))
+    books = [_combine(book, web.get(book.md5)) if book.md5 else book for book in koreader]
+    books += [
+        _combine(_koreader_book(path, md5), book)
+        for md5, book in recent_web.items()
+        if md5 not in known
+    ]
+    books.sort(key=lambda book: book.last_read, reverse=True)
+    return tuple(books[:RECENT_BOOKS_LIMIT])
+
+
+# --- KOReader's statistics file ----------------------------------------------------------------
 # The cache keys include mtime and size, so a newly synced file is picked up immediately.
 
 
 @lru_cache(maxsize=32)
-def _load_stats(
-    path: str, _mtime_ns: int, _size: int, tz_key: str, today: date
-) -> ReadingStats | None:
+def _load_koreader(
+    path: str, _mtime_ns: int, _size: int, tz_key: str
+) -> tuple[tuple[tuple[date, int], ...], int, tuple[StatsBook, ...]] | None:
+    """(seconds per local day, pages read, recent books), or None if the file is unreadable."""
     tz = ZoneInfo(tz_key)
     try:
         with closing(_connect(Path(path))) as conn:
@@ -138,18 +292,7 @@ def _load_stats(
     except sqlite3.Error:
         log.warning("Could not read statistics file %s", path, exc_info=True)
         return None
-
-    week_start = today - timedelta(days=today.weekday())
-    return ReadingStats(
-        total_seconds=sum(days.values()),
-        year_seconds=sum(s for d, s in days.items() if d.year == today.year and d <= today),
-        week_seconds=sum(s for d, s in days.items() if week_start <= d <= today),
-        pages_read=pages_read,
-        days_read=sum(1 for s in days.values() if s > 0),
-        streak_days=_streak(days, today),
-        calendar=build_calendar(days, today),
-        books=books,
-    )
+    return tuple(days.items()), pages_read, books
 
 
 @lru_cache(maxsize=256)
