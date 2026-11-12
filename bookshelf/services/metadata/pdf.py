@@ -6,8 +6,6 @@ import logging
 import re
 from pathlib import Path
 
-from pypdf import PdfReader
-
 from .base import BookMetadata, register
 
 logging.getLogger("pypdf").setLevel(logging.ERROR)
@@ -18,6 +16,8 @@ _JUNK_TITLE = re.compile(r"^(untitled|microsoft word|.+\.(docx?|pdf|indd|tex|dvi
 
 @register("pdf")
 def extract_pdf(path: Path) -> BookMetadata:
+    from pypdf import PdfReader  # imported on first use: it takes about 6 MB of memory
+
     info = PdfReader(path).metadata
     if info is None:
         return BookMetadata()

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import time
 
-from pypdf import PdfReader
 from sqlalchemy.orm import Session
 
 from ..models import Book, ReadingProgress
@@ -111,6 +110,8 @@ def _pdf_pages(storage: Storage, book: Book) -> int | None:
     if path is None:
         return None
     try:
+        from pypdf import PdfReader  # imported on first use: it takes about 6 MB of memory
+
         return len(PdfReader(path).pages)
     except Exception:  # pypdf raises many types for damaged files
         return None
