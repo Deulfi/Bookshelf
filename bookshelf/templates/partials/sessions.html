@@ -1,0 +1,35 @@
+{# Rows of the book page's reading session log; "Show more" replaces itself with the next page.
+   A row opens the reader where that session ended; web reader sessions can be deleted. #}
+{% for session in sessions %}
+{% set resume = sessions_can_resume and (session.resume_position or session.resume_fraction is not none) %}
+<li class="session">
+  {% if resume %}
+  {% set query = {'at': session.resume_position} if session.resume_position else {} %}
+  {% if session.resume_fraction is not none %}{% set query = dict(query, fraction='%.6f'|format(session.resume_fraction)) %}{% endif %}
+  <a class="session-body" href="/read/{{ sessions_book_id }}?{{ query|urlencode }}" title="Resume reading where this session ended">
+  {% else %}
+  <div class="session-body">
+  {% endif %}
+    <div class="session-main">
+      <span>{{ session.started|date }} · {{ session.started.strftime('%H:%M') }}</span>
+      <strong>{{ session.seconds|duration }}</strong>
+    </div>
+    <div class="session-sub muted">
+      <span>{{ session.source }}</span>
+      <span>{{ session.detail }}</span>
+    </div>
+  {% if resume %}</a>{% else %}</div>{% endif %}
+  {% if session.id %}
+  <form method="post" action="/books/{{ sessions_book_id }}/sessions/{{ session.id }}/delete" data-confirm="Delete this reading session? Its time is also removed from your statistics.">
+    <button class="icon-btn session-delete" aria-label="Delete this session" title="Delete this session">{{ icon('trash', 15) }}</button>
+  </form>
+  {% else %}
+  <span class="session-delete-spacer" title="Recorded by KOReader; its statistics are managed in KOReader"></span>
+  {% endif %}
+</li>
+{% endfor %}
+{% if sessions_more_url %}
+<li class="session-more">
+  <button type="button" class="btn btn-sm" hx-get="{{ sessions_more_url }}" hx-target="closest li" hx-swap="outerHTML">Show more</button>
+</li>
+{% endif %}

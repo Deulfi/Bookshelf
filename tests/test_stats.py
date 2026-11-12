@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from bookshelf.models import User, WebReadingTime
 from bookshelf.security import md5_hex
@@ -234,3 +235,151 @@ def test_web_time_merges_with_koreader(admin_client: TestClient, tmp_path: Path)
 
     # Without a database the KOReader numbers are unchanged.
     assert load_stats(path, ZoneInfo("UTC")).total_seconds == 10 * 60 + 300
+
+
+# --- Reading sessions --------------------------------------------------------------------------
+
+
+def test_web_reader_sessions(admin_client: TestClient) -> None:
+    from bookshelf.models import ReadingSession
+    from bookshelf.services.reading_stats import SESSION_GAP, add_web_time
+
+    book_id = upload(admin_client, "a.epub", make_epub(title="Dracula")).json()["id"]
+    page = admin_client.get(f"/books/{book_id}").text
+    assert "Reading sessions" not in page
+    md5 = page.split('KOReader document ID</dt><dd class="mono">')[1][:32]
+    user_id = _admin_id(admin_client)
+    t0 = 1_800_000_000
+    with admin_client.app.state.sessionmaker() as db:
+        add_web_time(db, user_id, md5, 60, t0, fraction=0.12, previous_fraction=0.10, device_id="a")
+        add_web_time(
+            db, user_id, md5, 60, t0 + 120, fraction=0.15, previous_fraction=0.12, device_id="a"
+        )
+        # a long pause, then another sitting; another browser has its own session
+        add_web_time(db, user_id, md5, 30, t0 + 120 + SESSION_GAP + 1, fraction=0.2, device_id="a")
+        add_web_time(
+            db, user_id, md5, 45, t0 + 200, fraction=0.5, previous_fraction=0.15, device_id="b"
+        )
+        rows = db.scalars(select(ReadingSession).order_by(ReadingSession.id)).all()
+    assert [(r.device_id, r.seconds, r.start_fraction, r.end_fraction) for r in rows] == [
+        ("a", 120, 0.10, 0.15),
+        ("a", 30, 0.2, 0.2),  # without an earlier position, the session starts where it ends
+        ("b", 45, 0.15, 0.5),
+    ]
+    assert rows[0].started_at == t0 - 60 and rows[0].ended_at == t0 + 120
+
+    page = admin_client.get(f"/books/{book_id}").text
+    assert "Reading sessions" in page
+    assert "10% → 15%" in page and "15% → 50%" in page
+    assert "Show more" not in page
+
+
+def test_reader_position_updates_create_a_session(admin_client: TestClient) -> None:
+    book_id = upload(admin_client, "a.epub", make_epub(title="Dracula")).json()["id"]
+    _put_position(admin_client, book_id, 0)  # position only: no session
+    assert "Reading sessions" not in admin_client.get(f"/books/{book_id}").text
+    _put_position(admin_client, book_id, 90)
+    page = admin_client.get(f"/books/{book_id}").text
+    assert "Reading sessions" in page and "Web reader" in page and "2 min" in page
+
+
+def test_koreader_sessions_and_paging(admin_client: TestClient, tmp_path: Path) -> None:
+    book_id = upload(admin_client, "a.epub", make_epub(title="Dracula")).json()["id"]
+    page = admin_client.get(f"/books/{book_id}").text
+    md5 = page.split('KOReader document ID</dt><dd class="mono">')[1][:32]
+    start = ts(2026, 10, 1, 8)
+    reads = []
+    for sitting in range(12):  # 12 sittings, a day apart, 3 pages of a minute each
+        base = start + sitting * 86400
+        reads += [(base + i * 60, sitting * 3 + i + 1, 60) for i in range(3)]
+    data = make_statistics_db(
+        tmp_path / "statistics.sqlite3",
+        [{"title": "Dracula", "md5": md5, "pages": 100, "reads": reads}],
+    )
+    assert (
+        admin_client.put("/webdav/statistics.sqlite3", content=data, auth=ADMIN).status_code == 201
+    )
+
+    page = admin_client.get(f"/books/{book_id}").text
+    assert page.count('class="session"') == 10
+    assert "pages 34–36 of 100" in page  # the newest sitting comes first
+    assert "pages 1–3" not in page
+    assert f"/books/{book_id}/sessions?offset=10" in page
+
+    more = admin_client.get(f"/books/{book_id}/sessions?offset=10").text
+    assert more.count('class="session"') == 2
+    assert "pages 1–3 of 100" in more and "Show more" not in more
+
+    admin_client.post("/admin/users", data={"username": "bob", "password": "bobpass1"})
+    admin_client.post("/logout")
+    admin_client.post("/login", data={"username": "bob", "password": "bobpass1"})
+    assert admin_client.get(f"/books/{book_id}/sessions").status_code == 404
+
+
+def test_session_resume_links(admin_client: TestClient, tmp_path: Path) -> None:
+    book_id = upload(admin_client, "a.epub", make_epub(title="Dracula")).json()["id"]
+    _put_position(admin_client, book_id, 90)  # web reader: ends at its XPointer, 10%
+    page = admin_client.get(f"/books/{book_id}").text
+    md5 = page.split('KOReader document ID</dt><dd class="mono">')[1][:32]
+    link = (
+        f'href="/read/{book_id}?at=%2Fbody%2FDocFragment%5B1%5D%2Fbody%2Fp%5B1%5D'
+        f'&amp;fraction=0.100000"'
+    )
+    assert link in page
+    assert "Delete this session" in page
+
+    # KOReader: resume at the last page read / the page count KOReader had then
+    reads = [(ts(2026, 10, 1, 8) + i * 60, page_no, 60) for i, page_no in enumerate((5, 6, 30))]
+    data = make_statistics_db(
+        tmp_path / "statistics.sqlite3",
+        [{"title": "Dracula", "md5": md5, "pages": 120, "reads": reads}],
+    )
+    admin_client.put("/webdav/statistics.sqlite3", content=data, auth=ADMIN)
+    page = admin_client.get(f"/books/{book_id}").text
+    assert "pages 5–30 of 120" in page
+    assert f'href="/read/{book_id}?fraction=0.250000"' in page
+    assert page.count('session-delete"') == 1  # KOReader's sessions can't be deleted here
+
+    # The reader opens there and gets the resume target in its bootstrap.
+    def bootstrap(url: str) -> dict:
+        html = admin_client.get(url).text
+        return json.loads(
+            html.split('id="reader-bootstrap"')[1].split(">", 1)[1].split("</script>")[0]
+        )
+
+    assert bootstrap(f"/read/{book_id}?fraction=0.25")["resume"] == {
+        "progress": "",
+        "percentage": 0.25,
+    }
+    assert "resume" not in bootstrap(f"/read/{book_id}")
+    assert bootstrap(f"/read/{book_id}?fraction=7")["resume"]["percentage"] == 1.0
+
+
+def test_delete_web_session_removes_its_time(admin_client: TestClient, client: TestClient) -> None:
+    from bookshelf.models import ReadingSession
+
+    book_id = upload(admin_client, "a.epub", make_epub(title="Dracula")).json()["id"]
+    _put_position(admin_client, book_id, 25 * 60)
+    assert "25 min" in admin_client.get("/stats").text
+    with admin_client.app.state.sessionmaker() as db:
+        session_id = db.scalar(select(ReadingSession.id))
+
+    # Another user can't delete it, and a session of another book doesn't match this one.
+    other = upload(admin_client, "b.epub", make_epub(title="Other")).json()["id"]
+    response = admin_client.post(f"/books/{other}/sessions/{session_id}/delete")
+    assert response.status_code == 404
+    admin_client.post("/admin/users", data={"username": "bob", "password": "bobpass1"})
+    client.post("/logout")
+    client.post("/login", data={"username": "bob", "password": "bobpass1"})
+    assert client.post(f"/books/{book_id}/sessions/{session_id}/delete").status_code == 404
+    client.post("/logout")
+    client.post("/login", data={"username": ADMIN[0], "password": ADMIN[1]})
+
+    response = admin_client.post(
+        f"/books/{book_id}/sessions/{session_id}/delete", follow_redirects=False
+    )
+    assert response.status_code == 303
+    assert "Reading sessions" not in admin_client.get(f"/books/{book_id}").text
+    assert "No statistics yet" in admin_client.get("/stats").text  # its time is gone too
+    with admin_client.app.state.sessionmaker() as db:
+        assert db.scalar(select(func.count()).select_from(WebReadingTime)) == 0

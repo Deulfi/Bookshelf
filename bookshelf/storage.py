@@ -10,14 +10,20 @@ Books are stored as <Author>/<Series>/<Title>.<ext> below the user's library roo
 books/<user_id>/ by default, or the shared ingest_dir (e.g. a NAS share) when it is set.
 Files already in a library root are registered in place by a scan. Book.file_path is
 always relative to the library root the file lives in.
+
+Scans skip files and folders whose name starts with "." (e.g. Syncthing's .stfolder) and names
+matching the ``scan_ignore`` patterns (BOOKSHELF_SCAN_IGNORE).
 """
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import uuid
-from pathlib import Path
+from collections.abc import Iterator
+from fnmatch import fnmatchcase
+from pathlib import Path, PurePosixPath
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -31,7 +37,9 @@ _SAFE_FILE_NAME = re.compile(r"^[a-z0-9][a-z0-9._@-]{0,63}$")
 
 
 class Storage:
-    def __init__(self, root: Path, ingest_dir: Path | None = None) -> None:
+    def __init__(
+        self, root: Path, ingest_dir: Path | None = None, scan_ignore: tuple[str, ...] = ()
+    ) -> None:
         self.root = root
         self.books_dir = root / "books"
         self.covers_dir = root / "covers"
@@ -39,6 +47,24 @@ class Storage:
         self.files_dir = root / "files"
         self.reader_dir = root / "reader"  # optional web reader config and fonts
         self.ingest_dir = ingest_dir
+        self.scan_ignore = tuple(p.casefold() for p in scan_ignore if p)
+
+    def _ignored_name(self, name: str) -> bool:
+        folded = name.casefold()
+        return name.startswith(".") or any(fnmatchcase(folded, p) for p in self.scan_ignore)
+
+    def is_ignored(self, relative: str) -> bool:
+        """True if a path below a library root is skipped by scans."""
+        return any(self._ignored_name(part) for part in PurePosixPath(relative).parts)
+
+    def library_files(self, root: Path) -> Iterator[Path]:
+        """Files below ``root`` that scans look at, in a stable order; ignored folders are
+        never entered."""
+        for directory, folders, files in os.walk(root):
+            folders[:] = sorted(f for f in folders if not self._ignored_name(f))
+            for name in sorted(files):
+                if not self._ignored_name(name):
+                    yield Path(directory) / name
 
     def ensure_dirs(self) -> None:
         for directory in (self.books_dir, self.covers_dir, self.tmp_dir, self.files_dir):

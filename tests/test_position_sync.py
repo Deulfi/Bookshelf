@@ -129,7 +129,8 @@ def test_set_progress_by_percentage_writes_xpointer(admin_client: TestClient) ->
     assert response.status_code == 303
     position = admin_client.get(f"/api/books/{book['id']}/position").json()
     assert position["percentage"] == 0.6
-    assert position["progress"] == "/body/DocFragment[3]/body"  # equal chapters: 60% is in #3
+    # Equal chapters: 60% is 40% into chapter 3, which has an h1 and 300 paragraphs.
+    assert position["progress"] == "/body/DocFragment[3]/body/p[120]"
     assert position["device"] == "Bookshelf (edited)"
     page = admin_client.get(f"/books/{book['id']}").text
     assert "60%" in page
@@ -147,18 +148,52 @@ def test_set_progress_by_chapter(admin_client: TestClient) -> None:
 @pytest.mark.parametrize(
     "data",
     [
-        {"mode": "percent", "percent": "120"},
         {"mode": "percent", "percent": "abc"},
-        {"mode": "chapter", "chapter": "9"},
         {"mode": "chapter", "chapter": ""},
+        {"mode": "chapter", "chapter": "x"},
     ],
 )
-def test_set_progress_rejects_bad_input(admin_client: TestClient, data: dict) -> None:
+def test_set_progress_rejects_non_numbers(admin_client: TestClient, data: dict) -> None:
     book_id = upload(admin_client, "c.epub", make_chapter_epub(chapters=4)).json()["id"]
     response = admin_client.post(f"/books/{book_id}/progress", data=data)
     assert response.status_code == 422
     assert "data-open" in response.text  # the dialog opens again with the error
     assert admin_client.get(f"/api/books/{book_id}/position").json()["progress"] is None
+
+
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        ({"mode": "percent", "percent": "120"}, 1.0),
+        ({"mode": "percent", "percent": "-5"}, 0.0),
+        ({"mode": "chapter", "chapter": "9"}, 1.0),  # 9 of 4: capped to the last = finished
+        ({"mode": "chapter", "chapter": "4"}, 1.0),  # the last chapter means finished
+        ({"mode": "chapter", "chapter": "0"}, 0.0),  # nothing read yet
+        ({"mode": "chapter", "chapter": "-3"}, 0.0),
+        # the other tab's field is ignored, even when it is out of range or not a number
+        ({"mode": "chapter", "chapter": "2", "percent": "120"}, None),
+        ({"mode": "percent", "percent": "50", "chapter": "abc"}, 0.5),
+    ],
+)
+def test_set_progress_caps_values(admin_client: TestClient, data: dict, expected) -> None:
+    book_id = upload(admin_client, "c.epub", make_chapter_epub(chapters=4)).json()["id"]
+    response = admin_client.post(f"/books/{book_id}/progress", data=data, follow_redirects=False)
+    assert response.status_code == 303
+    percentage = admin_client.get(f"/api/books/{book_id}/position").json()["percentage"]
+    if expected is None:
+        assert 0.2 < percentage < 0.3  # chapter 2 of 4
+    else:
+        assert percentage == expected
+
+
+def test_progress_dialog_defaults_to_chapter_0_when_not_started(admin_client: TestClient) -> None:
+    book_id = upload(admin_client, "c.epub", make_chapter_epub(chapters=4)).json()["id"]
+    page = admin_client.get(f"/books/{book_id}").text
+    assert 'name="chapter" type="number" step="1" inputmode="numeric" value="0"' in page
+    assert "novalidate" in page and 'max="' not in page.split("progress-form")[1][:3000]
+    admin_client.post(f"/books/{book_id}/progress", data={"mode": "chapter", "chapter": "4"})
+    page = admin_client.get(f"/books/{book_id}").text
+    assert "100%" in page and "4/4</span>" in page and 'value="4"' in page
 
 
 def test_set_progress_other_formats_percentage_only(admin_client: TestClient) -> None:
@@ -187,3 +222,57 @@ def test_progress_edit_is_private(admin_client: TestClient, client: TestClient) 
     client.post("/login", data={"username": "bob", "password": "bobpass1"})
     assert client.post(f"/books/{book_id}/progress", data={"percent": "5"}).status_code == 404
     assert client.post(f"/books/{book_id}/progress/delete").status_code == 404
+
+
+def test_chapters_at_anchors_inside_one_file(admin_client: TestClient) -> None:
+    """Calibre-style books keep several chapters per file; the TOC points at anchors."""
+    epub = make_chapter_epub(chapters=6, lines=50, per_file=3)
+    book = upload(admin_client, "a.epub", epub).json()
+    for number in (2, 3, 5, 6):
+        admin_client.post(
+            f"/books/{book['id']}/progress", data={"mode": "chapter", "chapter": str(number)}
+        )
+        page = admin_client.get(f"/books/{book['id']}").text
+        assert f"{number}/6</span>" in page, number
+    position = admin_client.get(f"/api/books/{book['id']}/position").json()
+    assert position["percentage"] == 1.0  # the last chapter means finished
+    admin_client.post(f"/books/{book['id']}/progress", data={"mode": "chapter", "chapter": "5"})
+    position = admin_client.get(f"/api/books/{book['id']}/position").json()
+    # Chapter 5 is the second in file 2: its heading is the second <h2> there.
+    assert position["progress"] == "/body/DocFragment[2]/body/div/h2[2]"
+    assert 0.65 < position["percentage"] < 0.7
+
+
+def test_chapter_of_a_paragraph_position_between_anchors(admin_client: TestClient) -> None:
+    book = upload(
+        admin_client, "a.epub", make_chapter_epub(chapters=6, lines=50, per_file=3)
+    ).json()
+    admin_client.put(
+        "/syncs/progress",
+        headers=_sync_headers(),
+        json={
+            "document": _document(admin_client, book["id"]),
+            "progress": "/body/DocFragment[1]/body/div/p[60]/text().3",  # in chapter 2
+            "percentage": 0.2,
+            "device": "Kobo",
+            "device_id": "k",
+        },
+    )
+    assert "2/6</span>" in admin_client.get(f"/books/{book['id']}").text
+
+
+def test_mark_as_finished(admin_client: TestClient) -> None:
+    book = upload(
+        admin_client, "a.epub", make_chapter_epub(chapters=6, lines=50, per_file=3)
+    ).json()
+    response = admin_client.post(
+        f"/books/{book['id']}/progress",
+        data={"mode": "percent", "percent": "3", "finished": "1"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    position = admin_client.get(f"/api/books/{book['id']}/position").json()
+    assert position["percentage"] == 1.0
+    assert position["progress"] == "/body/DocFragment[2]/body/div/p[150]"  # the last block
+    page = admin_client.get(f"/books/{book['id']}").text
+    assert "100%" in page and "6/6</span>" in page and "Finished" in page

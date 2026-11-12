@@ -66,7 +66,7 @@
     <div class="setting-rows">
       <form method="post" action="/settings/scan-interval" class="setting-row">
         <label class="setting-label" for="scan-interval">Scan automatically</label>
-        <select class="select select-sm" id="scan-interval" name="minutes" onchange="this.form.submit()">
+        <select class="select setting-control" id="scan-interval" name="minutes" onchange="this.form.submit()">
           {% for minutes, label in scan_choices %}
           <option value="{{ minutes }}"{% if minutes == scanner.interval_minutes %} selected{% endif %}>{{ label }}</option>
           {% endfor %}
@@ -82,7 +82,7 @@
         {% if not scanner.shared %}
         {# The Scan button at the top only scans your own folder; this one scans everyone's. #}
         <form method="post" action="/settings/scan">
-          <button class="btn btn-sm" type="submit"{% if scanner.running %} disabled{% endif %}>{{ icon('sync', 15) }} Scan all users</button>
+          <button class="btn setting-control" type="submit"{% if scanner.running %} disabled{% endif %}>{{ icon('sync', 16) }} Scan all users</button>
         </form>
         {% endif %}
       </div>

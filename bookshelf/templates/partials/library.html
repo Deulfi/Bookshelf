@@ -20,9 +20,13 @@
   {% endif %}
 
   {% if continue_reading %}
-  <section aria-labelledby="continue-heading">
-    <h2 class="section-title" id="continue-heading">Continue reading</h2>
-    <div class="continue-row">
+  <section aria-labelledby="continue-heading" data-hscroll>
+    <div class="section-head">
+      <h2 class="section-title" id="continue-heading">Continue reading</h2>
+      {# filled by app.js when the row is wider than the page: one dot per screenful #}
+      <div class="hscroll-dots" data-hscroll-dots role="group" aria-label="Scroll position" hidden></div>
+    </div>
+    <div class="continue-row" data-hscroll-track>
       {% for entry in continue_reading %}
       <div class="continue-card">
         {% if entry.book.format in readable_formats %}

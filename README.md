@@ -6,9 +6,9 @@ Everything runs in one small Docker container with a single SQLite database.
 
 > **This is a fork.** It is an opinionated fork of
 > [Bookshelf by Hannes Thöne](https://github.com/hthoene/Bookshelf). It keeps the original's small
-> footprint and adds three things: a configurable **web reader**, **library folders** on disk
-> (`Author/Series/Title`, with scanning) and **reading positions shared** between the web reader,
-> KOReader and Readest. It is shaped by one way of reading (long web novels, scroll mode) and does
+> footprint and adds some things like: a configurable **web reader**, **library scanner** with Audiobookshelf
+> compatible folder structur(`Author/Series/Title`) and **reading session list**.
+> It is shaped by one way of reading (long web novels, scroll mode) and does
 > not try to be a complete library manager. If you want the lean original, use upstream. If you
 > want a full-featured library with audiobooks, annotations and Kobo sync, look at
 > [BookOrbit](https://github.com/bookorbit/bookorbit).
@@ -64,29 +64,36 @@ Supported formats: EPUB, PDF, MOBI, AZW3, FB2, CBZ, CBR, DJVU, TXT, RTF, HTML, D
 
 ## Quick start (Docker)
 
+Bookshelf is published as `ghcr.io/deulfi/bookshelf` (amd64 and arm64). In an empty folder:
+
 ```bash
-git clone https://github.com/Deulfi/Bookshelf.git
-cd Bookshelf
-cp .env.example .env    # optional: adjust port, IP and other settings
+curl -O https://raw.githubusercontent.com/Deulfi/Bookshelf/main/docker-compose.yml
+curl -o .env https://raw.githubusercontent.com/Deulfi/Bookshelf/main/.env.example   # optional
 docker compose up -d
 ```
 
-Open <http://localhost:8080> and create the administrator account.
+Open <http://localhost:8080> and create the administrator account. Adjust the port, IP and other
+settings in `.env`; `docker-compose.yml` never needs local changes.
 
-To update, run `git pull && docker compose up -d --build`. Your settings live in `.env`,
-which is not tracked by Git, so `docker-compose.yml` never needs local changes.
+To update, run `docker compose pull && docker compose up -d`. `:latest` is the newest release;
+pin a version with `image: ghcr.io/deulfi/bookshelf:0.2` (or `:0.2.2`) instead.
 
 Data (database, books, covers) is stored in the `bookshelf-data` volume, mounted at `/data`.
 If you prefer a bind mount instead, make sure the directory is writable by UID 1000.
 
-### Prebuilt image
+Proxmox VE (9.1 and newer) can pull the same image as an LXC template (*CT Templates → Pull from
+OCI Registry*); keep `/data` on a mount point so it survives replacing the container.
 
-Every commit on `main` is published as `ghcr.io/deulfi/bookshelf:latest` (amd64 and arm64), and
-release tags as `ghcr.io/deulfi/bookshelf:<version>`. To use it instead of building locally,
-replace the `build:` and `image:` lines in `docker-compose.yml` with
-`image: ghcr.io/deulfi/bookshelf:latest`, and update with `docker compose pull && docker compose up -d`. Proxmox VE (9.1 and newer) can pull
-the same image as an LXC template (*CT Templates → Pull from OCI Registry*); keep `/data` on a
-mount point so it survives replacing the container.
+### Build from source
+
+```bash
+git clone https://github.com/Deulfi/Bookshelf.git
+cd Bookshelf
+cp .env.example .env    # optional
+```
+
+Uncomment the `build: .` line in `docker-compose.yml`, then run `docker compose up -d --build`
+(again after each `git pull`).
 
 ### Configuration
 
@@ -101,6 +108,7 @@ Set these in `.env` (see [.env.example](.env.example)). All of them are optional
 | `BOOKSHELF_SESSION_DAYS` | `30` | How long a web login lasts |
 | `BOOKSHELF_SECURE_COOKIES` | `false` | Set to `true` when served over HTTPS |
 | `BOOKSHELF_INGEST_DIR` | *(empty)* | Shared library folder, e.g. a NAS share (empty = one folder per user in the data dir) |
+| `BOOKSHELF_SCAN_IGNORE` | *(empty)* | File and folder names scans skip, comma-separated patterns, e.g. `@eaDir,*.tmp` |
 | `TZ` | `UTC` | Time zone for reading statistics, e.g. `Europe/Berlin` |
 
 When running without Docker Compose, `BOOKSHELF_DATA_DIR` (default `./data`, `/data` in the
@@ -117,6 +125,10 @@ administrators can also scan every user's folder at once). A scan also
 removes entries whose file was deleted. Files uploaded by older versions under random names are
 renamed to the `Author/Series/Title` layout on the first scan. With a shared folder only
 administrators can scan, and new files found there belong to the first administrator.
+
+Scans skip every file and folder whose name starts with a dot (such as Syncthing's `.stfolder`
+and `.stversions`) and names matching `BOOKSHELF_SCAN_IGNORE`. Books already imported from such a
+folder are removed from the library on the next scan; their files are left alone.
 
 ### Command line
 

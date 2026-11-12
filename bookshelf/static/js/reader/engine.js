@@ -5,6 +5,22 @@ import { isXPointer, parseXPointer, resolveXPointer, toXPointer } from './xpoint
 
 const EDGE = 2 // px from a section edge that counts as "at the edge"
 
+/** A collapsed range at the end of a block's text. XPointers name blocks, but a range on the
+ *  element itself loses its offset in foliate's CFI.fromRange (the CFI becomes the block's
+ *  start), and foliate would then count a chapter anchor inside the block (a heading's
+ *  <span id>) as not reached yet. See ../foliate/VENDORED.md ("Known quirks"). */
+function blockEnd(doc, found) {
+    if (found instanceof Range) return found
+    const range = doc.createRange()
+    const walker = doc.createTreeWalker(found, NodeFilter.SHOW_TEXT)
+    let last = null
+    while (walker.nextNode()) last = walker.currentNode
+    if (last) range.setStart(last, last.length)
+    else range.selectNodeContents(found)
+    range.collapse(true)
+    return range
+}
+
 export class Engine extends EventTarget {
     view
     location = null
@@ -74,6 +90,32 @@ export class Engine extends EventTarget {
         }
     }
 
+    /** Table-of-contents label of the chapter at a saved position (a CFI or an XPointer),
+     *  from foliate's own TOC lookup, so books that keep several chapters in one file (TOC
+     *  entries pointing at anchors) get the right one. Other books need no document load and
+     *  use the section's chapter. */
+    async chapterLabelOf(position) {
+        const index = this.sectionOf(position)
+        if (index === null || index === undefined) return null
+        this.sectionLabel(index) // builds the TOC list
+        const anchored = this.#sectionLabels
+            .some(([section, , href]) => section === index && href?.includes('#'))
+        if (!anchored) return this.sectionLabel(index)
+        try {
+            let cfi = position
+            const target = this.#xpointerTarget(position)
+            if (target) {
+                const doc = await this.book.sections[target.index].createDocument()
+                cfi = this.view.getCFI(target.index, blockEnd(doc, target.anchor(doc)))
+            }
+            const label = (await this.view.getTOCItemOf(cfi))?.label?.trim()
+            if (label) return label
+        } catch {
+            // fall back to the section's chapter
+        }
+        return this.sectionLabel(index)
+    }
+
     /** Table-of-contents label of the chapter a section belongs to. */
     sectionLabel(index) {
         if (index === null || index === undefined) return null
@@ -88,7 +130,7 @@ export class Engine extends EventTarget {
                         // a broken href: skip the entry
                     }
                     if (section !== null && section !== undefined && section >= 0)
-                        this.#sectionLabels.push([section, item.label?.trim()])
+                        this.#sectionLabels.push([section, item.label?.trim(), item.href])
                     walk(item.subitems)
                 }
             }

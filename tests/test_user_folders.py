@@ -127,3 +127,49 @@ def test_scan_api(admin_client: TestClient, client: TestClient) -> None:
     assert status["running"] is False and status["error"] is None
     admin_client.post("/logout")
     assert client.post("/api/library/scan").status_code == 401
+
+
+def test_scan_skips_dot_folders_and_ignore_patterns(admin_client: TestClient) -> None:
+    _wait_for_scanner(admin_client)
+    admin = _user(admin_client, "admin")
+    storage = admin_client.app.state.storage
+    folder = storage.library_root(admin.id)
+    _drop(folder, ".stversions/Old.epub", make_epub(title="Old Version", series=None))
+    _drop(folder, "A/.hidden.epub", make_epub(title="Hidden File", series=None))
+    _drop(folder, "@eaDir/Thumb.epub", make_epub(title="Synology Junk", series=None))
+    _drop(folder, "A/Real.epub", make_epub(title="Real Book", series=None))
+    storage.scan_ignore = ("@eadir",)
+    try:
+        result = admin_client.app.state.scanner.run_scan(admin.id)
+    finally:
+        storage.scan_ignore = ()
+    assert result is not None and result.imported == 1
+    page = admin_client.get("/").text
+    assert "Real Book" in page
+    assert "Old Version" not in page and "Hidden File" not in page and "Synology" not in page
+
+
+def test_scan_removes_entries_from_ignored_folders_but_keeps_files(
+    admin_client: TestClient,
+) -> None:
+    _wait_for_scanner(admin_client)
+    admin = _user(admin_client, "admin")
+    storage = admin_client.app.state.storage
+    folder = storage.library_root(admin.id)
+    path = _drop(folder, "Sync/Book.epub", make_epub(title="Synced Copy", series=None))
+    assert admin_client.app.state.scanner.run_scan(admin.id).imported == 1
+    storage.scan_ignore = ("sync",)  # e.g. the user adds the folder to BOOKSHELF_SCAN_IGNORE
+    try:
+        result = admin_client.app.state.scanner.run_scan(admin.id)
+    finally:
+        storage.scan_ignore = ()
+    assert result.removed == 1
+    assert "Synced Copy" not in admin_client.get("/").text
+    assert path.is_file()  # a scan never deletes book files
+
+
+def test_scan_ignore_setting_from_env(monkeypatch) -> None:
+    from bookshelf.config import Settings
+
+    monkeypatch.setenv("BOOKSHELF_SCAN_IGNORE", " @eaDir , *.tmp,,")
+    assert Settings.from_env().scan_ignore == ("@eaDir", "*.tmp")

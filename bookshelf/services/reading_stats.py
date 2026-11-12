@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..models import Book, WebReadingTime
+from ..models import Book, ReadingSession, WebReadingTime
 from ..storage import Storage
 
 log = logging.getLogger(__name__)
@@ -34,6 +34,8 @@ STATISTICS_FILE = "statistics.sqlite3"
 CALENDAR_WEEKS = 53
 RECENT_BOOKS_LIMIT = 12
 MAX_WEB_SECONDS = 3600  # most reading time accepted from one reader update
+SESSION_GAP = 600  # a pause longer than this (seconds) starts a new reading session
+SESSIONS_PER_SOURCE = 500  # most sessions per book and source shown in the log
 _LEVEL_MINUTES = (15, 30, 60)  # thresholds for calendar intensity levels 2, 3 and 4
 
 
@@ -56,6 +58,20 @@ class StatsBook:
             fraction_read = min(self.pages_read / self.total_pages, 1.0)
         remaining_pages = max(self.total_pages * (1 - fraction_read), 0)
         return round((self.seconds - self.web_seconds) / self.pages_read * remaining_pages)
+
+
+@dataclass(frozen=True)
+class SessionRow:
+    """One reading session for the book page's log."""
+
+    started: datetime  # local time (the server's TZ)
+    seconds: int
+    source: str  # "Web reader", "KOReader", ...
+    detail: str  # what was read: "12% → 15%" or "pages 30–52 of 534"
+    # Where the session ended, to resume there: a position (XPointer/CFI) and/or a fraction.
+    resume_position: str = ""
+    resume_fraction: float | None = None
+    id: int | None = None  # web reader sessions only; KOReader's come from its own file
 
 
 @dataclass(frozen=True)
@@ -102,9 +118,21 @@ def last_synced(path: Path) -> datetime | None:
 
 
 def add_web_time(
-    db: Session, user_id: int, document: str, seconds: float, now: int | None = None
+    db: Session,
+    user_id: int,
+    document: str,
+    seconds: float,
+    now: int | None = None,
+    *,
+    fraction: float | None = None,
+    previous_fraction: float | None = None,
+    device: str = "Web reader",
+    device_id: str = "",
+    position: str = "",
 ) -> None:
-    """Add reading time reported by the browser reader to the current hour's bucket."""
+    """Add reading time reported by the browser reader: to the current hour's bucket (totals,
+    calendar) and to this device's current session (the book page's log). ``fraction`` and
+    ``position`` are where the reading ended, ``previous_fraction`` the progress before it."""
     seconds = min(int(seconds), MAX_WEB_SECONDS)
     if seconds <= 0 or not document:
         return
@@ -116,7 +144,70 @@ def add_web_time(
         db.add(row)
     row.seconds += seconds
     row.last_read = now
+
+    end = fraction if fraction is not None else previous_fraction or 0.0
+    session = db.scalars(
+        select(ReadingSession)
+        .where(
+            ReadingSession.user_id == user_id,
+            ReadingSession.document == document,
+            ReadingSession.device_id == device_id,
+        )
+        .order_by(ReadingSession.ended_at.desc())
+        .limit(1)
+    ).first()
+    if session is not None and now - session.ended_at <= SESSION_GAP:
+        session.seconds += seconds
+        session.ended_at = now
+        session.end_fraction = end
+        session.end_position = position
+    else:
+        db.add(
+            ReadingSession(
+                user_id=user_id,
+                document=document,
+                device=device[:200],
+                device_id=device_id[:200],
+                started_at=now - seconds,
+                ended_at=now,
+                seconds=seconds,
+                start_fraction=previous_fraction if previous_fraction is not None else end,
+                end_fraction=end,
+                end_position=position,
+            )
+        )
     db.commit()
+
+
+def delete_web_session(db: Session, user_id: int, document: str, session_id: int) -> bool:
+    """Delete one of the web reader's sessions of a book and take its time out of the
+    statistics (the hour buckets it was added to, newest first). False if there is no such
+    session for this user and book."""
+    session = db.get(ReadingSession, session_id)
+    if session is None or session.user_id != user_id or session.document != document:
+        return False
+    remaining = session.seconds
+    buckets = db.scalars(
+        select(WebReadingTime)
+        .where(
+            WebReadingTime.user_id == user_id,
+            WebReadingTime.document == document,
+            WebReadingTime.hour >= session.started_at - session.started_at % 3600,
+            WebReadingTime.hour <= session.ended_at,
+        )
+        .order_by(WebReadingTime.hour.desc())
+    ).all()
+    for bucket in buckets:
+        if remaining <= 0:
+            break
+        taken = min(bucket.seconds, remaining)
+        bucket.seconds -= taken
+        remaining -= taken
+        if bucket.seconds <= 0:
+            db.delete(bucket)
+    db.delete(session)
+    db.commit()
+    return True
 
 
 def load_stats(
@@ -168,6 +259,74 @@ def book_stats(
         return koreader
     web = _web_books(db, user_id, documents=[md5]).get(md5)
     return _combine(koreader, web)
+
+
+def book_sessions(
+    path: Path,
+    md5: str,
+    tz: ZoneInfo,
+    *,
+    db: Session,
+    user_id: int,
+    offset: int = 0,
+    limit: int = 10,
+) -> tuple[list[SessionRow], bool]:
+    """Reading sessions of one book from the web reader and KOReader, newest first, and
+    whether there are more after this page."""
+    rows: list[tuple[int, SessionRow]] = []
+    for session in db.scalars(
+        select(ReadingSession)
+        .where(ReadingSession.user_id == user_id, ReadingSession.document == md5)
+        .order_by(ReadingSession.ended_at.desc())
+        .limit(SESSIONS_PER_SOURCE)
+    ):
+        detail = f"{_percent(session.start_fraction)} → {_percent(session.end_fraction)}"
+        rows.append(
+            (
+                session.started_at,
+                SessionRow(
+                    started=datetime.fromtimestamp(session.started_at, tz),
+                    seconds=session.seconds,
+                    source=session.device or "Web reader",
+                    detail=detail,
+                    resume_position=session.end_position,
+                    resume_fraction=session.end_fraction,
+                    id=session.id,
+                ),
+            )
+        )
+    for started, seconds, first, last, end_page, total in _koreader_sessions(path, md5):
+        pages = f"page {first}" if first == last else f"pages {first}–{last}"
+        if total:
+            pages += f" of {total}"
+        rows.append(
+            (
+                started,
+                SessionRow(
+                    started=datetime.fromtimestamp(started, tz),
+                    seconds=seconds,
+                    source="KOReader",
+                    detail=pages,
+                    # KOReader's page numbers depend on its layout; the share of the book doesn't.
+                    resume_fraction=min(end_page / total, 1.0) if total else None,
+                ),
+            )
+        )
+    rows.sort(key=lambda row: row[0], reverse=True)
+    page = [row for _, row in rows[offset : offset + limit]]
+    return page, len(rows) > offset + limit
+
+
+def _percent(fraction: float) -> str:
+    value = max(0.0, min(1.0, fraction or 0.0)) * 100
+    return f"{value:.0f}%" if value >= 10 or value == 0 else f"{value:.1f}%"
+
+
+def _koreader_sessions(path: Path, md5: str) -> tuple[tuple[int, ...], ...]:
+    if not path.is_file():
+        return ()
+    stat = path.stat()
+    return _load_koreader_sessions(str(path), stat.st_mtime_ns, stat.st_size, md5)
 
 
 def _koreader_stats(path: Path, tz: ZoneInfo) -> tuple | None:
@@ -293,6 +452,50 @@ def _load_koreader(
         log.warning("Could not read statistics file %s", path, exc_info=True)
         return None
     return tuple(days.items()), pages_read, books
+
+
+@lru_cache(maxsize=64)
+def _load_koreader_sessions(
+    path: str, _mtime_ns: int, _size: int, md5: str
+) -> tuple[tuple[int, ...], ...]:
+    """(start, seconds, first page, last page, page read last, page count then) per sitting,
+    newest first. A pause longer than SESSION_GAP since the end of the previous page starts a
+    new session. The page count is the one KOReader recorded with that page (it changes with
+    the font size), else the book's."""
+    try:
+        with closing(_connect(Path(path))) as conn:
+            rows = conn.execute(
+                f"""WITH reads AS (
+                        SELECT p.start_time AS start, p.duration AS duration, p.page AS page,
+                               COALESCE(NULLIF(p.total_pages, 0), b.pages, 0) AS total,
+                               CASE WHEN p.start_time - MAX(p.start_time + p.duration) OVER (
+                                   ORDER BY p.start_time
+                                   ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                               ) > ? THEN 1 ELSE 0 END AS starts_session
+                        FROM page_stat_data p JOIN book b ON b.id = p.id_book
+                        WHERE b.md5 = ?
+                    ), numbered AS (
+                        SELECT *, SUM(starts_session) OVER (
+                            ORDER BY start ROWS UNBOUNDED PRECEDING
+                        ) AS session
+                        FROM reads
+                    ), ranked AS (
+                        SELECT *, ROW_NUMBER() OVER (
+                            PARTITION BY session ORDER BY start DESC
+                        ) AS newest
+                        FROM numbered
+                    )
+                    SELECT MIN(start), SUM(duration), MIN(page), MAX(page),
+                           MAX(CASE WHEN newest = 1 THEN page END),
+                           MAX(CASE WHEN newest = 1 THEN total END)
+                    FROM ranked GROUP BY session ORDER BY 1 DESC
+                    LIMIT {SESSIONS_PER_SOURCE}""",
+                (SESSION_GAP, md5),
+            ).fetchall()
+    except sqlite3.Error:
+        log.warning("Could not read statistics file %s", path, exc_info=True)
+        return ()
+    return tuple(tuple(int(value or 0) for value in row) for row in rows)
 
 
 @lru_cache(maxsize=256)

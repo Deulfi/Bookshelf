@@ -69,6 +69,17 @@
           ]
         },
         {
+          "key": "textIndent",
+          "type": "segmented",
+          "label": "Paragraph indent",
+          "default": "book",
+          "options": [
+            { "value": "book", "label": "Book" },
+            { "value": "none", "label": "None", "css": "p { text-indent: 0 !important; padding-left: 0 !important; margin-left: 0 !important; }" },
+            { "value": "first", "label": "First line", "css": "p { text-indent: 1.5em !important; padding-left: 0 !important; margin-left: 0 !important; }" }
+          ]
+        },
+        {
           "key": "hyphenate",
           "type": "toggle",
           "label": "Hyphenation",

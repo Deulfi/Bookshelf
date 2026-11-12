@@ -39,7 +39,7 @@ class VersionedStaticFiles(StaticFiles):
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    storage = Storage(settings.data_dir, settings.ingest_dir)
+    storage = Storage(settings.data_dir, settings.ingest_dir, settings.scan_ignore)
     storage.ensure_dirs()
 
     app = FastAPI(title="Bookshelf", version=__version__, docs_url=None, redoc_url=None)

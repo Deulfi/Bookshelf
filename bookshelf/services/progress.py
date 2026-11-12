@@ -57,7 +57,9 @@ def set_manual_progress(
     percent: float | None = None,
     chapter: int | None = None,
 ) -> ReadingProgress:
-    """Set ``book``'s progress to a percentage (0–100) or to the start of a chapter.
+    """Set ``book``'s progress to a percentage (0–100) or to the start of a chapter. Values
+    out of range are capped. Chapter 0 means nothing read yet (0%), the last chapter means
+    the book is finished (100%).
 
     The record is shared with KOReader, Readest and the web reader, so the position is written
     in their format where possible: a KOReader XPointer for EPUBs, a page number for PDFs.
@@ -67,15 +69,17 @@ def set_manual_progress(
     if chapter is not None:
         if outline is None:
             raise ProgressError("This book has no chapters to choose from.")
-        if not 1 <= chapter <= outline.chapter_total:
-            raise ProgressError(f"Choose a chapter from 1 to {outline.chapter_total}.")
-        index = chapters.chapter_start(outline, chapter)
-        fraction = outline.fraction_at(index)
-        position = chapters.xpointer(index)
+        chapter = min(max(chapter, 0), outline.chapter_total)
+        if chapter == 0:
+            fraction = 0.0
+            position = _position_at(storage, book, outline, fraction)
+        elif chapter == outline.chapter_total:
+            fraction = 1.0
+            position = _position_at(storage, book, outline, fraction)
+        else:
+            position, fraction = chapters.chapter_position(outline, chapter)
     elif percent is not None:
-        if not 0 <= percent <= 100:
-            raise ProgressError("Enter a percentage from 0 to 100.")
-        fraction = percent / 100
+        fraction = min(max(percent, 0.0), 100.0) / 100
         position = _position_at(storage, book, outline, fraction)
     else:
         raise ProgressError("Enter a percentage or a chapter.")
@@ -94,7 +98,7 @@ def _position_at(
     storage: Storage, book: Book, outline: chapters.Outline | None, fraction: float
 ) -> str:
     if outline is not None:
-        return chapters.xpointer(outline.index_at(fraction))
+        return chapters.position_at(outline, fraction)
     if book.format == "pdf":
         pages = _pdf_pages(storage, book)
         if pages:

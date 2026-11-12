@@ -93,6 +93,86 @@
     element.scrollLeft = element.scrollWidth;
   });
 
+  // Rows that scroll sideways (Continue reading): page dots next to the title (one per
+  // screenful, click to jump) and dragging with the mouse. Touch keeps native swiping.
+  // Rebuilt after htmx swaps the library.
+  function hscrollPages(track) {
+    const max = track.scrollWidth - track.clientWidth;
+    return max > 2 ? Math.ceil(track.scrollWidth / track.clientWidth - 0.05) : 1;
+  }
+  function updateHscroll(box) {
+    const track = box.querySelector("[data-hscroll-track]");
+    const dots = box.querySelector("[data-hscroll-dots]");
+    if (!track || !dots) return;
+    const pages = hscrollPages(track);
+    track.classList.toggle("can-drag", pages > 1);
+    dots.hidden = pages < 2;
+    if (dots.children.length !== (pages > 1 ? pages : 0)) {
+      dots.replaceChildren(
+        ...Array.from({ length: pages > 1 ? pages : 0 }, (_, page) => {
+          const dot = document.createElement("button");
+          dot.type = "button";
+          dot.className = "hscroll-dot";
+          dot.dataset.hscrollPage = page;
+          dot.setAttribute("aria-label", `Page ${page + 1} of ${pages}`);
+          return dot;
+        }),
+      );
+    }
+    const max = track.scrollWidth - track.clientWidth;
+    const current = max > 0 ? Math.round((track.scrollLeft / max) * (pages - 1)) : 0;
+    [...dots.children].forEach((dot, page) => dot.setAttribute("aria-current", String(page === current)));
+  }
+  const updateAllHscroll = () => document.querySelectorAll("[data-hscroll]").forEach(updateHscroll);
+  updateAllHscroll();
+  window.addEventListener("resize", updateAllHscroll);
+  document.body.addEventListener("htmx:afterSettle", updateAllHscroll);
+  document.addEventListener(
+    "scroll",
+    (event) => {
+      const box = event.target.closest?.("[data-hscroll]");
+      if (box) updateHscroll(box);
+    },
+    true,
+  );
+  document.addEventListener("click", (event) => {
+    const dot = event.target.closest("[data-hscroll-page]");
+    if (!dot) return;
+    const track = dot.closest("[data-hscroll]").querySelector("[data-hscroll-track]");
+    const pages = hscrollPages(track);
+    const max = track.scrollWidth - track.clientWidth;
+    track.scrollTo({ left: (max * Number(dot.dataset.hscrollPage)) / (pages - 1), behavior: "smooth" });
+  });
+
+  let drag = null;
+  document.addEventListener("pointerdown", (event) => {
+    const track = event.target.closest?.("[data-hscroll-track].can-drag");
+    if (!track || event.pointerType !== "mouse" || event.button !== 0) return;
+    drag = { track, x: event.clientX, left: track.scrollLeft, moved: false };
+  });
+  document.addEventListener("pointermove", (event) => {
+    if (!drag) return;
+    const dx = event.clientX - drag.x;
+    if (!drag.moved && Math.abs(dx) < 6) return; // a click, not a drag
+    drag.moved = true;
+    drag.track.classList.add("is-dragging");
+    drag.track.scrollLeft = drag.left - dx;
+  });
+  const endDrag = () => {
+    if (!drag) return;
+    const { track, moved } = drag;
+    drag = null;
+    if (!moved) return;
+    // Let the click that ends a drag pass without opening the card under the mouse.
+    setTimeout(() => track.classList.remove("is-dragging"), 0);
+  };
+  document.addEventListener("pointerup", endDrag);
+  document.addEventListener("pointercancel", endDrag);
+  // Covers and links would otherwise start a native image/link drag.
+  document.addEventListener("dragstart", (event) => {
+    if (event.target.closest?.("[data-hscroll-track].can-drag")) event.preventDefault();
+  });
+
   document.addEventListener("submit", (event) => {
     const message = event.target.dataset.confirm;
     if (message && !window.confirm(message)) event.preventDefault();

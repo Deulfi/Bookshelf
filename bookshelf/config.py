@@ -20,6 +20,11 @@ def _env_path(name: str) -> Path | None:
     return Path(value) if value else None
 
 
+def _env_list(name: str) -> tuple[str, ...]:
+    """Comma-separated values, e.g. "@eaDir, *.tmp"."""
+    return tuple(item.strip() for item in os.environ.get(name, "").split(",") if item.strip())
+
+
 @dataclass(frozen=True)
 class Settings:
     data_dir: Path = Path("./data")
@@ -33,6 +38,8 @@ class Settings:
     timezone: str = "UTC"
     # Directory to scan for new books (empty = disabled)
     ingest_dir: Path | None = None
+    # Extra names (fnmatch patterns) that library scans skip; names starting with "." always are.
+    scan_ignore: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -44,6 +51,7 @@ class Settings:
             secure_cookies=_env_bool("BOOKSHELF_SECURE_COOKIES", False),
             timezone=os.environ.get("TZ", "UTC"),
             ingest_dir=_env_path("BOOKSHELF_INGEST_DIR"),
+            scan_ignore=_env_list("BOOKSHELF_SCAN_IGNORE"),
         )
 
     @property

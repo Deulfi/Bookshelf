@@ -159,7 +159,10 @@ document.addEventListener('visibilitychange', () => {
     }
 })
 
-const { target, fallback, push } = await sync.initial()
+// "Resume" on a reading session of the book page opens there (?at=…&fraction=…). Drop the
+// parameters so a reload continues from the saved position instead.
+if (boot.resume) history.replaceState(history.state, '', location.pathname)
+const { target, fallback, push } = boot.resume ? sync.resume(boot.resume) : await sync.initial()
 const attempts = [target]
 if (fallback) attempts.push({ fraction: fallback.percentage ?? 0 })
 attempts.push(null)

@@ -43,9 +43,18 @@ def _entry_or_404(db: DB, user: User, book_id: int) -> BookEntry:
 
 @router.get("/read/{book_id}")
 def read_book(
-    request: Request, db: DB, user: CurrentUser, storage: AppStorage, book_id: int
+    request: Request,
+    db: DB,
+    user: CurrentUser,
+    storage: AppStorage,
+    book_id: int,
+    at: str = "",
+    fraction: float | None = None,
 ) -> Response:
-    """Read a book in the browser. Everything the reader needs is inlined as JSON."""
+    """Read a book in the browser. Everything the reader needs is inlined as JSON.
+
+    ``at`` (a position) and/or ``fraction`` open the book there instead of at the synced
+    position, which they then replace: "resume" on a reading session of the book page."""
     entry = _entry_or_404(db, user, book_id)
     book = entry.book
     if book.format not in READABLE_FORMATS:
@@ -67,6 +76,11 @@ def read_book(
         "prefs": reader_config.get_prefs(db, user),
         "plugins": reader_config.plugin_urls(storage),
     }
+    if at or fraction is not None:
+        bootstrap["resume"] = {
+            "progress": at[:4000],
+            "percentage": min(max(fraction or 0.0, 0.0), 1.0),
+        }
     return render(
         request,
         "read.html",
@@ -118,6 +132,8 @@ def put_position(body: PositionBody, db: DB, user: CurrentUser, book_id: int) ->
     position = body.progress or body.cfi
     if not position:
         return JSONResponse({"error": "No position given."}, status_code=422)
+    before = progress.get_progress(db, user.id, entry.book.partial_md5)
+    previous_fraction = before.percentage if before is not None else None
     record = progress.save_progress(
         db,
         user.id,
@@ -127,7 +143,17 @@ def put_position(body: PositionBody, db: DB, user: CurrentUser, book_id: int) ->
         device=body.device.strip() or "Web reader",
         device_id=body.device_id.strip(),
     )
-    reading_stats.add_web_time(db, user.id, entry.book.partial_md5, body.seconds)
+    reading_stats.add_web_time(
+        db,
+        user.id,
+        entry.book.partial_md5,
+        body.seconds,
+        fraction=record.percentage,
+        previous_fraction=previous_fraction,
+        device=record.device,
+        device_id=record.device_id,
+        position=record.progress,
+    )
     return JSONResponse(_position(record))
 
 

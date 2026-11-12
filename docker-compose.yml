@@ -1,8 +1,8 @@
 # Configure via a .env file next to this one (see .env.example) – no need to edit this file.
 services:
   bookshelf:
-    build: .
-    image: bookshelf:latest
+    image: ghcr.io/deulfi/bookshelf:latest
+    # build: .   # uncomment to build from a git checkout (docker compose up -d --build)
     container_name: bookshelf
     restart: unless-stopped
     ports:
@@ -13,6 +13,7 @@ services:
       BOOKSHELF_SESSION_DAYS: ${BOOKSHELF_SESSION_DAYS:-30}
       BOOKSHELF_SECURE_COOKIES: ${BOOKSHELF_SECURE_COOKIES:-false}
       BOOKSHELF_INGEST_DIR: ${BOOKSHELF_INGEST_DIR:-}
+      BOOKSHELF_SCAN_IGNORE: ${BOOKSHELF_SCAN_IGNORE:-}
       TZ: ${TZ:-UTC}
     volumes:
       - bookshelf-data:/data

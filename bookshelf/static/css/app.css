@@ -158,6 +158,9 @@ strong { font-weight: 650; }
 }
 .setting-row:last-child { border-bottom: 0; padding-bottom: 0; }
 .setting-label { font-size: 14.5px; min-width: 0; }
+/* controls on the right of setting rows line up: one width (fits "Every 15 minutes"), the
+   height of the Copy buttons */
+.btn.setting-control, .select.setting-control { width: 168px; height: 42px; font-size: 14.5px; }
 .btn-block { width: 100%; }
 .btn.is-copied { color: var(--accent); border-color: var(--accent); }
 .icon-btn {
@@ -416,6 +419,21 @@ textarea.input { height: auto; min-height: 120px; padding: 10px 12px; line-heigh
 
 /* ---------- Continue reading ---------- */
 
+/* page dots next to the section title, and drag-to-scroll with the mouse (app.js) */
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.section-head .section-title { margin-bottom: 0; }
+.hscroll-dots { display: flex; gap: 6px; }
+.hscroll-dots[hidden] { display: none; }
+.hscroll-dot {
+  width: 16px; height: 6px; padding: 0; border: 0; border-radius: 99px;
+  background: var(--border); cursor: pointer; transition: background 0.15s, width 0.15s;
+}
+.hscroll-dot:hover { background: var(--muted); }
+.hscroll-dot[aria-current="true"] { width: 24px; background: var(--accent); }
+.continue-row.can-drag { cursor: grab; }
+.continue-row.is-dragging { cursor: grabbing; scroll-snap-type: none; user-select: none; }
+.continue-row.is-dragging a { pointer-events: none; }
+
 .continue-row {
   display: grid;
   grid-auto-flow: column;
@@ -498,7 +516,9 @@ textarea.input { height: auto; min-height: 120px; padding: 10px 12px; line-heigh
 .input-suffix { display: flex; align-items: center; gap: 10px; }
 .input-suffix .input { max-width: 140px; }
 .input-suffix span { color: var(--muted); white-space: nowrap; }
-.progress-delete { margin-right: auto; }
+/* Reset and Finished on the left, Cancel and Save on the right */
+.progress-delete { order: -2; }
+.progress-finished { order: -1; margin-right: auto; }
 .progress-card p { display: flex; align-items: center; gap: 6px; }
 .progress-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
 .progress-head strong { font-size: 22px; font-weight: 700; }
@@ -519,6 +539,25 @@ textarea.input { height: auto; min-height: 120px; padding: 10px 12px; line-heigh
 .facts dt { color: var(--muted); font-size: 11.5px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; }
 .facts dd { margin: 3px 0 0; overflow-wrap: anywhere; }
 .facts .wide { grid-column: 1 / -1; }
+
+/* reading session log on the book page (web reader and KOReader) */
+.sessions { margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--border); }
+.sessions-title {
+  display: flex; align-items: center; gap: 8px; margin: 0 0 6px;
+  color: var(--muted); font-size: 11.5px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase;
+}
+.session-list { display: grid; margin: 0; padding: 0; list-style: none; }
+.session { display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--border); }
+.session:last-child { border-bottom: 0; }
+.session-body { flex: 1; min-width: 0; margin: 0 -8px; padding: 10px 8px; border-radius: var(--radius-sm); color: inherit; text-decoration: none; }
+a.session-body:hover { background: var(--surface-2); }
+.session-delete { color: var(--muted); opacity: 0.7; }
+.session-delete:hover, .session-delete:focus-visible { color: var(--danger); opacity: 1; }
+.session-delete-spacer { width: 34px; flex: none; } /* keeps KOReader rows aligned */
+.session-main, .session-sub { display: flex; justify-content: space-between; gap: 12px; }
+.session-main { font-size: 14.5px; }
+.session-sub { margin-top: 2px; font-size: 13px; }
+.session-more { padding-top: 12px; }
 
 /* ---------- Dialogs ---------- */
 
@@ -678,6 +717,7 @@ code:not(.copy-value) { padding: 1px 6px; border-radius: 6px; background: var(--
   .actions { display: grid; grid-template-columns: 1fr 1fr; }
   .actions form, .actions .btn { width: 100%; }
   .btn-copy span { display: none; }
+  .setting-row > form:has(.setting-control), .btn.setting-control, .select.setting-control { width: 100%; }
   .btn-copy { width: 46px; padding: 0; }
   .card h2 { font-size: 16px; }
   .page-head { margin-bottom: 18px; }
@@ -694,7 +734,9 @@ code:not(.copy-value) { padding: 1px 6px; border-radius: 6px; background: var(--
     border-top: 1px solid var(--border);
     background: var(--surface);
   }
+  .dialog-foot { flex-wrap: wrap; }
   .dialog-foot .btn { flex: 1; }
+  .progress-finished { margin-right: 0; }
   .stat-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .stat-tile { padding: 14px 16px; }
   .stat-value { font-size: 23px; }

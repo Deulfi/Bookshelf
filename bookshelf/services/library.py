@@ -201,8 +201,8 @@ def sync_library(
     imported = 0
     seen_files = 0
     now = time.time()
-    for path in sorted(root.rglob("*")):
-        if not path.is_file() or detect_format(path.name) is None:
+    for path in storage.library_files(root):
+        if detect_format(path.name) is None:
             continue
         seen_files += 1
         relative = path.relative_to(root).as_posix()
@@ -264,7 +264,8 @@ def prune_missing(
 ) -> int:
     """Delete database entries (and covers) whose book file no longer exists on disk;
     only ``user``'s books when given."""
-    if user is None and storage.ingest_dir is not None and not _has_books(storage.ingest_dir):
+    shared = storage.ingest_dir
+    if user is None and shared is not None and not _has_books(storage, shared):
         return 0  # library folder missing or empty: could be an unmounted share
     # Libraries can be large: stream only the columns needed to find the file (plain rows, no
     # ORM objects), then delete the few missing entries by id.
@@ -273,7 +274,11 @@ def prune_missing(
         statement = statement.where(Book.user_id == user.id)
     missing: list[int] = []
     for row in db.execute(statement.execution_options(yield_per=500)):
-        if storage.find_book_file(row) is None:  # only reads user_id and file_path
+        if storage.is_ignored(row.file_path):  # e.g. imported before .stfolder was skipped
+            if log:
+                log(f"removed #{row.id} “{row.title}”: ignored folder ({row.file_path})")
+            missing.append(row.id)
+        elif storage.find_book_file(row) is None:  # only reads user_id and file_path
             if log:
                 log(f"removed #{row.id} “{row.title}”: file is gone ({row.file_path})")
             missing.append(row.id)
@@ -291,10 +296,10 @@ def prune_missing(
     return removed
 
 
-def _has_books(folder: Path) -> bool:
+def _has_books(storage: Storage, folder: Path) -> bool:
     if not folder.is_dir():
         return False
-    return any(p.is_file() and detect_format(p.name) is not None for p in folder.rglob("*"))
+    return any(detect_format(p.name) is not None for p in storage.library_files(folder))
 
 
 def _copy_limited(source: BinaryIO, target: Path, max_bytes: int) -> int:

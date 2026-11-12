@@ -98,10 +98,14 @@ def make_epub(
 
 
 def make_chapter_epub(
-    title: str = "Chapter Test Book", chapters: int = 3, lines: int = 300
+    title: str = "Chapter Test Book", chapters: int = 3, lines: int = 300, per_file: int = 1
 ) -> bytes:
     """An EPUB with several long, well-formed XHTML chapters and an NCX table of contents,
-    for exercising chapter navigation in the browser reader."""
+    for exercising chapter navigation in the browser reader. With ``per_file`` > 1, several
+    chapters share one file and the TOC points at anchors (``f1.xhtml#ch2``), like calibre
+    conversions that split by size."""
+    if per_file > 1:
+        return _anchored_epub(title, chapters, lines, per_file)
     items = "".join(
         f'<item id="ch{i}" href="ch{i}.xhtml" media-type="application/xhtml+xml"/>'
         for i in range(1, chapters + 1)
@@ -145,6 +149,60 @@ def make_chapter_epub(
                 '<html xmlns="http://www.w3.org/1999/xhtml"><head>'
                 f"<title>Chapter {i}</title></head><body><h1>Chapter {i}</h1>{paragraphs}"
                 "</body></html>",
+            )
+    return buffer.getvalue()
+
+
+def _anchored_epub(title: str, chapters: int, lines: int, per_file: int) -> bytes:
+    files = [
+        list(range(i, min(i + per_file, chapters + 1))) for i in range(1, chapters + 1, per_file)
+    ]
+    items = "".join(
+        f'<item id="f{n}" href="text/f{n}.xhtml" media-type="application/xhtml+xml"/>'
+        for n in range(1, len(files) + 1)
+    )
+    spine = "".join(f'<itemref idref="f{n}"/>' for n in range(1, len(files) + 1))
+    nav_points = "".join(
+        f'<navPoint id="n{i}" playOrder="{i}"><navLabel><text>Chapter {i}</text></navLabel>'
+        f'<content src="text/f{n}.xhtml#ch{i}"/></navPoint>'
+        for n, numbers in enumerate(files, start=1)
+        for i in numbers
+    )
+    opf = f"""<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="id">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>{escape(title)}</dc:title><dc:language>en</dc:language>
+    <dc:identifier id="id">urn:test:{escape(title)}</dc:identifier>
+  </metadata>
+  <manifest>{items}<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/></manifest>
+  <spine toc="ncx">{spine}</spine>
+</package>"""
+    ncx = f"""<?xml version="1.0" encoding="utf-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <head/><docTitle><text>{escape(title)}</text></docTitle><navMap>{nav_points}</navMap>
+</ncx>"""
+    container = """<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+</container>"""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("mimetype", "application/epub+zip")
+        archive.writestr("META-INF/container.xml", container)
+        archive.writestr("OEBPS/content.opf", opf)
+        archive.writestr("OEBPS/toc.ncx", ncx)
+        for n, numbers in enumerate(files, start=1):
+            # Anchors on inline spans inside the headings, with HTML entities, like calibre output.
+            body = "".join(
+                f'<h2><span id="ch{i}">Chapter&nbsp;{i}</span></h2>'
+                + "".join(f"<p>Chapter {i}, line {k}.</p>" for k in range(lines))
+                for i in numbers
+            )
+            archive.writestr(
+                f"OEBPS/text/f{n}.xhtml",
+                '<?xml version="1.0" encoding="utf-8"?>\n'
+                '<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Part</title></head>'
+                f"<body><div>{body}</div></body></html>",
             )
     return buffer.getvalue()
 

@@ -124,6 +124,27 @@ class WebReadingTime(Base):
     last_read: Mapped[int] = mapped_column(default=0)  # unix seconds of the latest addition
 
 
+class ReadingSession(Base):
+    """One sitting in the browser reader (pauses under ``reading_stats.SESSION_GAP`` continue
+    it), for the book page's session log. KOReader's sessions come from its statistics file."""
+
+    __tablename__ = "reading_sessions"
+    __table_args__ = (Index("ix_reading_sessions_book", "user_id", "document", "ended_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    document: Mapped[str] = mapped_column(String(32))  # the book's partial MD5
+    device: Mapped[str] = mapped_column(String(200), default="")
+    device_id: Mapped[str] = mapped_column(String(200), default="")
+    started_at: Mapped[int]  # unix seconds
+    ended_at: Mapped[int]
+    seconds: Mapped[int] = mapped_column(default=0)  # active reading time, not ended - started
+    start_fraction: Mapped[float] = mapped_column(default=0.0)
+    end_fraction: Mapped[float] = mapped_column(default=0.0)
+    # Where the session ended (XPointer or CFI, as in ReadingProgress), to resume there.
+    end_position: Mapped[str] = mapped_column(Text, default="")
+
+
 class ReadingProgress(Base):
     """Progress as reported by KOReader, keyed by its document hash (not by book id)."""
 

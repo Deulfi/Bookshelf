@@ -33,6 +33,12 @@ export class Sync {
         this.#dialog = dialog
     }
 
+    /** Open at a chosen record { progress, percentage } (resuming a session from the book
+     *  page) instead of the synced position; it becomes the new position everywhere. */
+    resume(record) {
+        return { target: this.#target(record), fallback: record, push: true }
+    }
+
     /** The position to open the book at (a CFI, an XPointer, { fraction } or null), and
      *  whether this browser's position won a conflict and should be sent to the server. */
     async initial() {
@@ -90,8 +96,8 @@ export class Sync {
         return { fraction: remote.percentage ?? 0 } // e.g. a page number from a PDF reader
     }
 
-    #where(progress, fraction) {
-        const label = this.#engine.sectionLabel(this.#engine.sectionOf(progress))
+    async #where(progress, fraction) {
+        const label = await this.#engine.chapterLabelOf(progress)
         return label ? `${label} · ${percent(fraction)}` : `About ${percent(fraction)}`
     }
 
@@ -102,10 +108,13 @@ export class Sync {
         this.#asking = true
         dialog.querySelector('[data-remote-device]').textContent =
             [remote.device || 'Another device', ago(remote.timestamp)].filter(Boolean).join(' · ')
-        dialog.querySelector('[data-remote-where]').textContent =
-            this.#where(remote.progress, remote.percentage)
-        dialog.querySelector('[data-local-where]').textContent =
-            this.#where(local.progress ?? local.cfi, local.fraction)
+        const [remoteWhere, localWhere] = await Promise.all([
+            this.#where(remote.progress, remote.percentage),
+            // this browser's exact CFI resolves without loading anything
+            this.#where(local.cfi ?? local.progress, local.fraction),
+        ])
+        dialog.querySelector('[data-remote-where]').textContent = remoteWhere
+        dialog.querySelector('[data-local-where]').textContent = localWhere
         const always = dialog.querySelector('input[name="always"]')
         always.checked = false
         dialog.returnValue = ''

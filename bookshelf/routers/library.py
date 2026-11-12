@@ -8,7 +8,8 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 from ..deps import DB, AppSettings, AppStorage, CurrentUser
-from ..models import User
+from ..formats import READABLE_FORMATS
+from ..models import Book, User
 from ..services import chapters, library, progress, reading_stats
 from ..services.library import BookEntry
 from ..services.metadata.base import parse_float
@@ -173,7 +174,7 @@ def _render_book(
     if entry.progress is not None and outline is not None:
         index = chapters.spine_index(entry.progress.progress)
         if index is not None and index >= 0:
-            chapter = chapters.chapter_in(outline, index)
+            chapter = chapters.chapter_in(outline, index, entry.progress.progress)
     return render(
         request,
         "book.html",
@@ -189,7 +190,33 @@ def _render_book(
         chapter_kind="Chapter" if outline and outline.toc else "Section",
         error=error,
         progress_error=progress_error,
+        **_sessions_page(request, db, storage, user, entry.book, offset=0),
     )
+
+
+SESSIONS_PAGE_SIZE = 10
+
+
+def _sessions_page(
+    request: Request, db: DB, storage: AppStorage, user: User, book: Book, *, offset: int
+) -> dict:
+    """Template values for one page of the book's reading sessions."""
+    sessions, more = reading_stats.book_sessions(
+        reading_stats.statistics_path(storage, user.id),
+        book.partial_md5,
+        request.app.state.settings.tzinfo,
+        db=db,
+        user_id=user.id,
+        offset=offset,
+        limit=SESSIONS_PAGE_SIZE,
+    )
+    next_offset = offset + SESSIONS_PAGE_SIZE
+    return {
+        "sessions": sessions,
+        "sessions_more_url": f"/books/{book.id}/sessions?offset={next_offset}" if more else None,
+        "sessions_book_id": book.id,
+        "sessions_can_resume": book.format in READABLE_FORMATS,
+    }
 
 
 @router.get("/books/{book_id}")
@@ -197,6 +224,30 @@ def book_page(
     request: Request, db: DB, user: CurrentUser, storage: AppStorage, book_id: int
 ) -> Response:
     return _render_book(request, db, storage, user, _entry_or_404(db, user, book_id))
+
+
+@router.get("/books/{book_id}/sessions")
+def book_sessions(
+    request: Request,
+    db: DB,
+    user: CurrentUser,
+    storage: AppStorage,
+    book_id: int,
+    offset: int = 0,
+) -> Response:
+    """More rows of the book page's reading session log (htmx)."""
+    book = _entry_or_404(db, user, book_id).book
+    page = _sessions_page(request, db, storage, user, book, offset=max(0, offset))
+    return render(request, "partials/sessions.html", **page)
+
+
+@router.post("/books/{book_id}/sessions/{session_id}/delete")
+def delete_session(db: DB, user: CurrentUser, book_id: int, session_id: int) -> Response:
+    """Delete a web reader session (and its time in the statistics)."""
+    book = _entry_or_404(db, user, book_id).book
+    if not reading_stats.delete_web_session(db, user.id, book.partial_md5, session_id):
+        raise HTTPException(status_code=404, detail="Session not found.")
+    return RedirectResponse(f"/books/{book_id}#sessions-title", status_code=303)
 
 
 @router.post("/books/{book_id}/progress")
@@ -209,15 +260,19 @@ def set_progress(
     mode: Annotated[str, Form()] = "percent",
     percent: Annotated[str, Form()] = "",
     chapter: Annotated[str, Form()] = "",
+    finished: Annotated[str, Form()] = "",
 ) -> Response:
-    """Set the reading progress by hand (book page dialog)."""
+    """Set the reading progress by hand (book page dialog). ``finished`` means 100%."""
     entry = _entry_or_404(db, user, book_id)
     try:
-        if mode == "chapter":
-            number = int(chapter.strip()) if chapter.strip().isdigit() else None
+        if finished:
+            progress.set_manual_progress(db, storage, entry.book, percent=100)
+        elif mode == "chapter":
+            # Only the field of the chosen mode counts; out-of-range values are capped.
+            number = parse_float(chapter.strip().replace(",", "."))
             if number is None:
                 raise progress.ProgressError("Enter a chapter number.")
-            progress.set_manual_progress(db, storage, entry.book, chapter=number)
+            progress.set_manual_progress(db, storage, entry.book, chapter=round(number))
         else:
             value = parse_float(percent.strip().rstrip("%").replace(",", "."))
             if value is None:
