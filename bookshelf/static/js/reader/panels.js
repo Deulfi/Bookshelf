@@ -1,4 +1,5 @@
-// Side panels: table of contents and the settings panel (generated from config.settings).
+// Side panels: table of contents, search and the settings panel (generated from
+// config.settings).
 import { controlOptions } from './config.js'
 
 export class Panels extends EventTarget {
@@ -15,6 +16,11 @@ export class Panels extends EventTarget {
         }
     }
 
+    /** The open panel is docked (data-docked): beside the text, which stays usable. */
+    get docked() {
+        return this.open !== null && this.#panels.get(this.open)?.hasAttribute('data-docked')
+    }
+
     get(name) {
         return this.#panels.get(name)
     }
@@ -25,7 +31,11 @@ export class Panels extends EventTarget {
         const panel = this.#panels.get(name)
         if (!panel) return
         panel.hidden = false
-        this.scrim.hidden = false
+        // A docked panel (search) sits beside the text instead of over it: no scrim, the
+        // book stays readable and scrollable.
+        if (panel.hasAttribute('data-docked')) document.body.dataset.docked = panel.classList
+            .contains('reader-panel-end') ? 'end' : 'start'
+        else this.scrim.hidden = false
         this.open = name
         this.dispatchEvent(new CustomEvent('open', { detail: { name, panel } }))
         panel.querySelector('[data-autofocus], button, input, select, a')?.focus({ preventScroll: true })
@@ -35,6 +45,7 @@ export class Panels extends EventTarget {
         if (!this.open) return
         this.#panels.get(this.open).hidden = true
         this.scrim.hidden = true
+        delete document.body.dataset.docked
         this.open = null
         if (notify) this.dispatchEvent(new Event('close'))
     }
@@ -85,6 +96,202 @@ export function buildTOC(container, engine, onNavigate) {
             container.querySelector('.is-current')?.scrollIntoView({ block: 'center' })
         },
     }
+}
+
+// ---------- Search ----------
+
+const SEARCH_KEY = 'bookshelf-reader-search' // this browser's search options
+
+function readSearchOptions() {
+    try {
+        return JSON.parse(localStorage.getItem(SEARCH_KEY)) ?? {}
+    } catch {
+        return {}
+    }
+}
+
+function checkbox(label, checked) {
+    const wrap = document.createElement('label')
+    wrap.className = 'search-option'
+    const input = Object.assign(document.createElement('input'), { type: 'checkbox', checked })
+    wrap.append(input, document.createTextNode(label))
+    return [wrap, input]
+}
+
+export function buildSearch(container, engine) {
+    let results = [] // { cfi, excerpt: { pre, match, post } } in book order
+    let hits = []
+    let current = -1
+    let active = null // running search generator
+    let token = 0
+    let jumped = false // the first match shown is a history step, moving between matches not
+    const saved = readSearchOptions()
+
+    const form = document.createElement('form')
+    form.className = 'search-form'
+    const scope = document.createElement('select')
+    scope.setAttribute('aria-label', 'Where to search')
+    scope.className = 'input'
+    for (const [value, label] of [['book', 'In book'], ['chapter', 'In chapter']]) {
+        const option = document.createElement('option')
+        option.value = value
+        option.textContent = label
+        scope.append(option)
+    }
+    const query = document.createElement('input')
+    query.type = 'text'
+    query.placeholder = 'Text to find'
+    query.className = 'input'
+    query.dataset.autofocus = ''
+    if (saved.scope === 'chapter') scope.value = 'chapter'
+    const button = document.createElement('button')
+    button.type = 'submit'
+    button.textContent = 'Search'
+    const row = Object.assign(document.createElement('div'), { className: 'search-row' })
+    row.append(query, button)
+    const [caseLabel, matchCase] = checkbox('Match case', Boolean(saved.matchCase))
+    const [wordsLabel, wholeWords] = checkbox('Whole words only', Boolean(saved.matchWholeWords))
+    const options = Object.assign(document.createElement('div'), { className: 'search-options' })
+    options.append(scope, caseLabel, wordsLabel)
+    form.append(row, options)
+    const save = () => {
+        try {
+            localStorage.setItem(SEARCH_KEY, JSON.stringify({
+                scope: scope.value, matchCase: matchCase.checked,
+                matchWholeWords: wholeWords.checked,
+            }))
+        } catch {
+            // storage blocked: the options last for this page
+        }
+    }
+    // a changed option searches again right away when there is something to search for
+    for (const control of [scope, matchCase, wholeWords])
+        control.addEventListener('change', () => {
+            save()
+            if (query.value.trim()) run()
+        })
+
+    const status = Object.assign(document.createElement('p'), { className: 'search-status' })
+    const nav = document.createElement('div')
+    nav.className = 'search-nav'
+    const prev = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Previous' })
+    const next = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Next' })
+    nav.append(prev, next)
+    const list = document.createElement('div')
+    list.className = 'search-results'
+    container.append(form, status, nav, list)
+
+    function updateNav() {
+        prev.disabled = current <= 0
+        next.disabled = current < 0 || current >= results.length - 1
+    }
+
+    function goTo(i) {
+        if (i < 0 || i >= results.length) return
+        hits[current]?.classList.remove('is-current')
+        current = i
+        hits[i].classList.add('is-current')
+        hits[i].scrollIntoView({ block: 'center' })
+        updateNav()
+        engine.goToMatch(results[i].cfi, { jump: !jumped })
+        jumped = true
+    }
+
+    prev.addEventListener('click', () => goTo(current - 1))
+    next.addEventListener('click', () => goTo(current + 1))
+
+    function addHits(items) {
+        for (const result of items) {
+            const i = results.length
+            results.push(result)
+            const hit = document.createElement('button')
+            hit.type = 'button'
+            hit.className = 'search-hit'
+            hit.append(
+                document.createTextNode(result.excerpt.pre),
+                Object.assign(document.createElement('span'), {
+                    className: 'search-match', textContent: result.excerpt.match,
+                }),
+                document.createTextNode(result.excerpt.post),
+            )
+            hit.addEventListener('click', () => goTo(i))
+            hits.push(hit)
+            list.append(hit)
+        }
+        updateNav()
+    }
+
+    function reset() {
+        results = []
+        hits = []
+        current = -1
+        list.replaceChildren()
+        updateNav()
+    }
+
+    async function run() {
+        const myToken = ++token
+        active?.return()
+        active = null
+        reset()
+        jumped = false
+        const text = query.value.trim()
+        if (!text) {
+            status.textContent = 'Type some text to find.'
+            return
+        }
+        const opts = {
+            query: text, matchCase: matchCase.checked, matchWholeWords: wholeWords.checked,
+        }
+        if (scope.value === 'chapter') {
+            const index = engine.location?.sectionIndex
+            if (index === undefined) {
+                status.textContent = 'Open a chapter first.'
+                return
+            }
+            opts.index = index
+        }
+        status.textContent = 'Searching…'
+        active = engine.search(opts)
+        try {
+            for await (const result of active) {
+                if (myToken !== token) return
+                if (result === 'done') break
+                if (result.progress != null) {
+                    status.textContent = `Searching… ${Math.round(result.progress * 100)}%`
+                    continue
+                }
+                if (result.subitems) addHits(result.subitems)
+                else if (result.cfi) addHits([result])
+            }
+        } finally {
+            if (active && myToken === token) active = null
+        }
+        if (myToken !== token) return
+        status.textContent = results.length
+            ? `${results.length} ${results.length === 1 ? 'match' : 'matches'}`
+            : 'No matches'
+        if (results.length) goTo(0)
+    }
+
+    form.addEventListener('submit', e => { e.preventDefault(); run() })
+
+    /** Stop a running search, drop the matches and their highlights in the text. */
+    function clear() {
+        token++
+        active?.return()
+        active = null
+        reset()
+        status.textContent = ''
+        engine.clearSearch()
+    }
+
+    // Closing the panel (close button, Escape or another panel) ends the search.
+    const panel = container.closest('[data-panel]')
+    if (panel) new MutationObserver(() => { if (panel.hidden) clear() })
+        .observe(panel, { attributes: true, attributeFilter: ['hidden'] })
+
+    return { clear }
 }
 
 // ---------- Settings ----------

@@ -47,10 +47,14 @@ us (no `submodules: true` in CI, no special Docker checkout, plain `git clone`).
    `paginator.js` grew from 1,166 lines (ours) to 4,463, with 122 commits since our snapshot.
 2. Write the commit hash into "Which version this is".
 3. Check the foliate APIs `../reader/engine.js` uses. They are not a stable API:
-   `view.open/init/goTo/goToFraction/next/prev/getCFI/resolveCFI/getTOCItemOf`, `view.book`,
-   `book.sections[i].createDocument`, `book.resolveHref`, `renderer.goTo({ index, anchor })`,
-   `renderer.start/end/size/viewSize/scrolled`, `renderer.nextSection/prevSection/setStyles`,
-   the renderer's `scroll` event and the view's `relocate` and `load` events.
+   `view.open/init/goTo/goToFraction/next/prev/getCFI/resolveCFI/getTOCItemOf`,
+   `view.search` (async generator of `{ progress }`, `{ subitems }` / `{ cfi, excerpt }` and
+   `'done'`), `view.clearSearch`, `view.book`, `book.sections[i].createDocument/size/linear`,
+   `book.resolveHref` (its `anchor(doc)`), `renderer.goTo({ index, anchor })`,
+   `renderer.start/end/size/viewSize/scrolled`, `renderer.containerPosition` (get/set, used to
+   lower a search match on screen), `renderer.nextSection/prevSection/setStyles`, the
+   renderer's `scroll` event and the view's `relocate`, `load` and `link` events (`link` marks
+   a jump for the go back / go forward history).
 4. Test in the browser (there are no automated tests for the reader's JavaScript):
    scroll and page mode, chapter auto-advance at the end of a chapter, themes (the page
    background must follow the theme), opening at a saved KOReader XPointer, a sync conflict

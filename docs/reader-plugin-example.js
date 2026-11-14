@@ -9,6 +9,7 @@
 //
 //   id          unique name, used in layout.top / layout.bottom
 //   label       name shown in the bar editor
+//   description optional one-line explanation, the editor's tooltip for the element
 //   icon        optional icon name for the editor (see bookshelf/icons.py)
 //   repeatable  true if it may appear more than once
 //   options     settings the editor offers for it: { key, type, label, default, options }
@@ -21,7 +22,7 @@
 //   ctx.engine    navigation: next(), prev(), nextSection(), prevSection(), goTo(href),
 //                 goToFraction(f), goToSectionFraction(f), hasSection(±1), toc, location
 //   ctx.prefs     the reader settings: get(key), set(key, value)
-//   ctx.panels    toggle('toc' | 'settings')
+//   ctx.panels    toggle('toc' | 'search' | 'settings')
 //   ctx.icon(name), ctx.theme()
 //   ctx.ui        helpers: button(ctx, { icon, label, onClick, showLabel }), text(className),
 //                 slider({ label, onSeek, showValue }), percent(f), fill(template, values)
@@ -34,6 +35,7 @@
 export default {
     id: 'clock',
     label: 'Clock and time left in chapter',
+    description: 'The time of day and the minutes left in the chapter',
     options: [
         { key: 'showTimeLeft', type: 'toggle', label: 'Show minutes left in the chapter', default: true },
     ],

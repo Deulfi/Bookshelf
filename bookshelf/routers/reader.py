@@ -26,11 +26,14 @@ READER_ICONS = (
     "chevron-left",
     "chevron-right",
     "list",
+    "search",
     "settings",
     "x",
     "sun",
     "maximize",
     "book",
+    "undo",
+    "redo",
 )
 
 

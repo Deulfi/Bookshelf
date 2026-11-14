@@ -5,7 +5,7 @@ import { Prefs } from './prefs.js'
 import { Position } from './position.js'
 import { Bars } from './bars.js'
 import { loadPlugins } from './elements/index.js'
-import { Panels, buildTOC, buildSettings } from './panels.js'
+import { Panels, buildTOC, buildSearch, buildSettings } from './panels.js'
 import { ChapterFlow } from './chapter-flow.js'
 import { Sync } from './sync.js'
 import {
@@ -67,8 +67,9 @@ await loadPlugins(boot.plugins ?? [])
 bars = new Bars(ctx, config.layout ?? {})
 const toc = buildTOC(panels.get('toc').querySelector('.panel-body'), engine, () => panels.close())
 buildSettings(panels.get('settings').querySelector('.panel-body'), config, prefs)
+buildSearch(panels.get('search').querySelector('.panel-body'), engine)
 panels.addEventListener('open', ({ detail }) => {
-    bars.show(false)
+    bars.show(panels.docked) // beside a docked panel the book stays usable: bars auto-hide
     if (detail.name === 'toc') toc.reveal()
 })
 panels.addEventListener('close', () => bars.show())

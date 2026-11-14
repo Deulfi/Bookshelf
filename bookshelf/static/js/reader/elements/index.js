@@ -4,6 +4,7 @@
 //   export default {
 //     id: 'chapter-progress',             // used in layout.top / layout.bottom
 //     label: 'Chapter progress bar',      // shown in the bar editor
+//     description: 'A slider for …',      // one line, the editor's tooltip for the element
 //     icon: 'list',                       // optional icon name for the editor
 //     repeatable: false,                  // may appear more than once (e.g. spacer)
 //     options: [{ key, type: 'toggle' | 'select' | 'text' | 'number', label, default,
@@ -16,9 +17,10 @@
 // A plugin module may also export an array of such definitions.
 import { ui } from './ui.js'
 import {
-    spacer, exit, title, chapterTitle, toc, settings, themeToggle, fullscreen,
+    spacer, space, exit, title, chapterTitle, toc, settings, search, themeToggle, fullscreen,
 } from './basic.js'
 import { prevChapter, nextChapter, prevPage, nextPage } from './navigation.js'
+import { goBack, goForward } from './history.js'
 import {
     progressBar, progressText, chapterProgress, chapterCounter, pageCounter,
 } from './progress.js'
@@ -47,8 +49,9 @@ export function register(definition, source = 'built-in') {
 }
 
 for (const element of [
-    spacer, exit, title, chapterTitle, toc, settings, themeToggle, fullscreen,
+    spacer, space, exit, title, chapterTitle, toc, settings, search, themeToggle, fullscreen,
     prevChapter, nextChapter, prevPage, nextPage,
+    goBack, goForward,
     progressBar, progressText, chapterProgress, chapterCounter, pageCounter,
 ]) register(element)
 
@@ -81,9 +84,10 @@ export function create(id, ctx, options) {
 
 /** What the bar editor offers: every registered element, without its code. */
 export function catalog() {
-    return [...registry.values()].map(({ id, label, icon, repeatable, options, source }) => ({
+    return [...registry.values()].map(({ id, label, description, icon, repeatable, options, source }) => ({
         id,
         label: label ?? id,
+        description: typeof description === 'string' ? description : '',
         icon,
         repeatable: Boolean(repeatable),
         options: options ?? [],

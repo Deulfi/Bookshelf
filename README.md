@@ -76,7 +76,7 @@ Open <http://localhost:8080> and create the administrator account. Adjust the po
 settings in `.env`; `docker-compose.yml` never needs local changes.
 
 To update, run `docker compose pull && docker compose up -d`. `:latest` is the newest release;
-pin a version with `image: ghcr.io/deulfi/bookshelf:0.2` (or `:0.2.2`) instead.
+pin a version with `image: ghcr.io/deulfi/bookshelf:0.3` (or `:0.3.0`) instead.
 
 Data (database, books, covers) is stored in the `bookshelf-data` volume, mounted at `/data`.
 If you prefer a bind mount instead, make sure the directory is writable by UID 1000.

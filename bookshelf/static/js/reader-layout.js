@@ -74,6 +74,11 @@ function labelOf(id) {
     return elements.get(id)?.label ?? `Unknown element “${id}”`
 }
 
+/** Tooltip of an element chip: what the element does, else its name. */
+function describe(id) {
+    return elements.get(id)?.description || labelOf(id)
+}
+
 function chip(bar, index, item) {
     const known = elements.has(item.id)
     const hasOptions = (elements.get(item.id)?.options ?? []).length > 0
@@ -83,7 +88,7 @@ function chip(bar, index, item) {
         class: `le-chip${known ? '' : ' is-unknown'}${item.id === 'spacer' ? ' is-spacer' : ''}${isOpen ? ' is-open' : ''}`,
         'data-index': index,
     },
-        h('span', { class: 'le-handle', title: 'Drag to move', onpointerdown: e => startDrag(e, { bar, index }) },
+        h('span', { class: 'le-handle', title: describe(item.id), onpointerdown: e => startDrag(e, { bar, index }) },
             labelOf(item.id)),
         h('span', { class: 'le-chip-tools' },
             h('button', { type: 'button', class: 'le-tool', 'aria-label': `Move ${labelOf(item.id)} left`, disabled: index === 0,
@@ -113,7 +118,7 @@ function palette() {
             entries.map(entry => {
                 const taken = !entry.repeatable && used(entry.id)
                 return h('li', { class: `le-chip le-source${taken ? ' is-used' : ''}` },
-                    h('span', { class: 'le-handle', title: taken ? 'Already in a bar' : 'Drag into a bar',
+                    h('span', { class: 'le-handle', title: describe(entry.id) + (taken ? ' (already in a bar)' : ''),
                         onpointerdown: taken ? null : e => startDrag(e, { palette: entry.id }) },
                         entry.label, entry.plugin ? h('small', { class: 'le-badge' }, 'plugin') : null),
                     h('span', { class: 'le-chip-tools' },

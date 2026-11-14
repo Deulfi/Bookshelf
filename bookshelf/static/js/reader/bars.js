@@ -52,7 +52,7 @@ export class Bars {
 
     hide() {
         clearTimeout(this.#timer)
-        if (this.#ctx.panels.open) return
+        if (this.#ctx.panels.open && !this.#ctx.panels.docked) return
         if (Object.values(this.#bars).some(bar => bar.contains(document.activeElement))) return
         document.body.classList.remove('bars-visible')
     }

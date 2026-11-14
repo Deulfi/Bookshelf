@@ -21,6 +21,22 @@ function blockEnd(doc, found) {
     return range
 }
 
+/** The share of a document's text that lies before `found` (an element or a range). */
+function textFraction(doc, found) {
+    const range = doc.createRange()
+    // a parsed document has no window, so no `instanceof Range`
+    if (found.startContainer) range.setStart(found.startContainer, found.startOffset)
+    else range.setStartBefore(found)
+    const walker = doc.createTreeWalker(doc.documentElement, 4 /* NodeFilter.SHOW_TEXT */)
+    let before = 0
+    let total = 0
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        total += node.length
+        if (range.comparePoint(node, 0) <= 0) before += node.length
+    }
+    return total > 0 ? before / total : 0
+}
+
 export class Engine extends EventTarget {
     view
     location = null
@@ -53,6 +69,8 @@ export class Engine extends EventTarget {
     async open(url) {
         await this.view.open(url)
         this.view.addEventListener('relocate', e => this.#relocated(e.detail))
+        // a link in the book (a footnote, a cross reference) is a jump too
+        this.view.addEventListener('link', () => this.#jump())
         // forwarded so listeners can attach to each newly loaded section document
         this.view.addEventListener('load', e => this.dispatchEvent(
             new CustomEvent('load', { detail: e.detail })))
@@ -65,12 +83,29 @@ export class Engine extends EventTarget {
         else await this.view.init({ lastLocation: position, showTextStart: true })
     }
 
-    /** Jump to a saved position while reading (e.g. one synced from another device). */
-    async goToPosition(position) {
+    /** Announce a jump (not reading on) before it happens, for the go back / go forward
+     *  history. Page turns, scrolling, chapter auto-advance and the chapter slider are reading
+     *  on; table of contents, search, links, chapter buttons and the book slider are jumps. */
+    #jump() {
+        this.dispatchEvent(new Event('jump'))
+    }
+
+    /** Jump to a saved position while reading (e.g. one synced from another device).
+     *  jump: false for moves that are not a new history step (the history itself). */
+    async goToPosition(position, { jump = true } = {}) {
+        if (jump) this.#jump()
         const target = this.#xpointerTarget(position)
         if (target) return this.renderer.goTo(target)
-        if (typeof position?.fraction === 'number') return this.goToFraction(position.fraction)
+        if (typeof position?.fraction === 'number') return this.view.goToFraction(position.fraction)
         return this.view.goTo(position)
+    }
+
+    /** Show a search match: like goToPosition, but in scroll mode the match ends up about a
+     *  third down the screen instead of on the first line, so the text around it is visible. */
+    async goToMatch(cfi, { jump = true } = {}) {
+        await this.goToPosition(cfi, { jump })
+        const r = this.renderer
+        if (r?.scrolled) r.containerPosition = Math.max(0, r.containerPosition - r.size / 3)
     }
 
     #xpointerTarget(position) {
@@ -145,6 +180,48 @@ export class Engine extends EventTarget {
         return label
     }
 
+    /** Where each table-of-contents entry starts ({ fraction, label, href }, fraction 0–1 of
+     *  the book), weighted by
+     *  section size like foliate's location.fraction. Entries pointing at an anchor inside a
+     *  section (`#fragment`) are placed at the anchor's share of the section's text, which
+     *  loads that section (at most `maxDocuments` sections; the rest stay at the start). */
+    async tocFractions({ maxDocuments = 50 } = {}) {
+        const sections = this.book?.sections ?? []
+        const sizes = sections.map(s => s.linear !== 'no' && s.size > 0 ? s.size : 0)
+        const total = sizes.reduce((a, b) => a + b, 0)
+        if (!total) return []
+        const before = [0]
+        for (const size of sizes) before.push(before.at(-1) + size)
+        this.sectionLabel(0) // builds the TOC list
+        const docs = new Map() // section index -> Promise<Document>
+        return Promise.all(this.#sectionLabels
+            .filter(([section]) => sizes[section])
+            .map(async ([section, label, href]) => {
+                let within = 0
+                if (href?.includes('#') && (docs.has(section) || docs.size < maxDocuments)) {
+                    try {
+                        if (!docs.has(section))
+                            docs.set(section, sections[section].createDocument())
+                        const doc = await docs.get(section)
+                        const found = this.book.resolveHref(href)?.anchor?.(doc)
+                        if (found) within = textFraction(doc, found)
+                    } catch {
+                        // keep the section start
+                    }
+                }
+                return { fraction: (before[section] + within * sizes[section]) / total, label, href }
+            }))
+    }
+
+    /** foliate's book search: an async generator of progress updates and matches. */
+    search(options) {
+        return this.view.search(options)
+    }
+
+    clearSearch() {
+        this.view.clearSearch?.()
+    }
+
     setAttributes(attributes) {
         for (const [name, value] of Object.entries(attributes))
             if (this.renderer.getAttribute(name) !== value) this.renderer.setAttribute(name, value)
@@ -205,10 +282,26 @@ export class Engine extends EventTarget {
 
     next(distance) { return this.view.next(distance) }
     prev(distance) { return this.view.prev(distance) }
-    nextSection() { return this.renderer.nextSection() }
-    prevSection() { return this.renderer.prevSection() }
-    goTo(target) { return this.view.goTo(target) }
-    goToFraction(fraction) { return this.view.goToFraction(fraction) }
+    // chapter buttons (chapter auto-advance reads on with next() / prev())
+    nextSection() {
+        this.#jump()
+        return this.renderer.nextSection()
+    }
+
+    prevSection() {
+        this.#jump()
+        return this.renderer.prevSection()
+    }
+
+    goTo(target) {
+        this.#jump()
+        return this.view.goTo(target)
+    }
+
+    goToFraction(fraction) {
+        this.#jump()
+        return this.view.goToFraction(fraction)
+    }
 
     #relocated(detail) {
         this.location = {

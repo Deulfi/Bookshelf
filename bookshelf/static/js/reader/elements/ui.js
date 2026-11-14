@@ -27,9 +27,10 @@ function text(className = '') {
 
 const percent = fraction => `${Math.round((fraction ?? 0) * 100)}%`
 
-/** A 0–1 slider with an optional value label. onSeek(fraction, done) runs while dragging
- *  (done = false, at most once per frame) and when released (done = true). */
-function slider({ label, onSeek, showValue = true, format = percent }) {
+/** A 0-1 slider with an optional value label. onSeek(fraction, done) runs while dragging
+ * (done = false, at most once per frame) and when released (done = true).
+ * disabled: the slider shows the value but does nothing when clicked or dragged. */
+function slider({ label, onSeek, showValue = true, format = percent, disabled = false }) {
     const el = document.createElement('div')
     el.className = 'rb-progress'
     const input = document.createElement('input')
@@ -38,6 +39,7 @@ function slider({ label, onSeek, showValue = true, format = percent }) {
     input.max = '1000'
     input.value = '0'
     input.setAttribute('aria-label', label)
+    if (disabled) input.disabled = true
     el.append(input)
     const output = showValue ? text('rb-percent') : null
     if (output) el.append(output)

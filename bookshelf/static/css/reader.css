@@ -61,6 +61,7 @@ foliate-view { display: block; width: 100%; height: 100%; }
 .rb-btn:disabled { opacity: 0.35; cursor: default; background: transparent; }
 .rb-btn:focus-visible { outline: 2px solid var(--reader-accent); outline-offset: 1px; }
 .rb-spacer { flex: 1; }
+.rb-space { flex: none; }
 .rb-text { font-size: 14px; color: var(--rb-muted); min-width: 0; }
 .rb-title {
   flex: 0 1 auto; padding: 0 6px;
@@ -69,8 +70,36 @@ foliate-view { display: block; width: 100%; height: 100%; }
 .rb-counter { flex: none; font-variant-numeric: tabular-nums; white-space: nowrap; padding: 0 6px; }
 .rb-percent { flex: none; font-variant-numeric: tabular-nums; min-width: 3.2em; text-align: right; }
 
-.rb-progress { flex: 1; display: flex; align-items: center; gap: 10px; min-width: 80px; padding: 0 6px; }
+/* Grows into free room but never shrinks below 160px, so next to a long title the title gives
+   way (ellipsis) instead of the slider. Crowded phone bars may squeeze it to 60px. */
+.rb-progress { flex: 1 0 160px; display: flex; align-items: center; gap: 10px; padding: 0 6px; }
 .rb-progress input { flex: 1; min-width: 0; accent-color: var(--reader-accent); }
+/* Chapter tick marks on the book progress bar (progress-bar element, "show chapters"): thin
+   lines just above the bar, not crossing it. ::before widens the hover/click area without
+   drawing anything. */
+/* Ticks are placed on the knob centre's path: --rb-thumb is the browser's default knob width,
+   and the slider gets no margin so it spans the track exactly (Chrome's default is 2px). */
+.rb-track { --rb-thumb: 16px; position: relative; flex: 1; min-width: 0; display: flex; }
+.rb-track input { margin-left: 0; margin-right: 0; }
+.rb-tick {
+  position: absolute; bottom: calc(50% + 4px); width: 1px; height: 8px; padding: 0; border: 0;
+  transform: translateX(-50%); background: var(--rb-muted); opacity: 0.55;
+}
+.rb-tick::before { content: ""; position: absolute; inset: -3px -2px; }
+button.rb-tick { cursor: pointer; }
+.rb-tick:hover { opacity: 1; background: var(--reader-accent); }
+/* The chapter title of the tick under the pointer, above the bar (below it in the top bar).
+   A disabled (read only) slider swallows pointer events, so it lets them through. */
+.rb-tick-tip {
+  position: absolute; bottom: calc(50% + 16px); transform: translateX(-50%); z-index: 1;
+  max-width: min(320px, 80vw); padding: 4px 8px; border: 1px solid var(--rb-border);
+  border-radius: var(--radius-sm); background: var(--rb-surface); color: var(--reader-fg);
+  font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  pointer-events: none; box-shadow: var(--pop-shadow);
+}
+.reader-bar-top .rb-tick-tip { bottom: auto; top: calc(50% + 10px); }
+.rb-tick-tip[hidden] { display: none; }
+.rb-track input:disabled { pointer-events: none; }
 
 /* ---------- Chapter auto-advance hint ---------- */
 
@@ -99,10 +128,11 @@ foliate-view { display: block; width: 100%; height: 100%; }
 
 /* ---------- Panels ---------- */
 
+:root { --panel-width: min(360px, 92vw); }
 .reader-scrim { position: fixed; inset: 0; z-index: 40; background: rgb(0 0 0 / 0.28); }
 .reader-panel {
   position: fixed; top: 0; bottom: 0; z-index: 50;
-  width: min(360px, 92vw);
+  width: var(--panel-width);
   display: flex; flex-direction: column;
   background: var(--reader-bg); color: var(--reader-fg);
   box-shadow: var(--pop-shadow);
@@ -126,6 +156,56 @@ foliate-view { display: block; width: 100%; height: 100%; }
 .toc a:hover { background: var(--rb-hover); }
 .toc a.is-current { background: var(--rb-hover); color: var(--reader-accent); font-weight: 600; }
 .rp-empty { color: var(--rb-muted); font-size: 14px; padding: 12px 0; }
+
+/* ---------- Docked panels (search) ---------- */
+/* A docked panel sits beside the text: the book and the bars move aside instead of being
+   covered. On phones it is a bottom sheet over the lower half and the book uses the top. */
+.reader-panel[data-docked] { box-shadow: none; }
+@media (min-width: 641px) {
+  body[data-docked="start"] #reader,
+  body[data-docked="start"] .reader-bar { left: var(--panel-width); }
+  body[data-docked="end"] #reader,
+  body[data-docked="end"] .reader-bar { right: var(--panel-width); }
+}
+@media (max-width: 640px) {
+  .reader-panel[data-docked] {
+    top: auto; height: 50dvh; border-right: 0; border-top: 1px solid var(--rb-border);
+    border-radius: var(--radius) var(--radius) 0 0;
+  }
+  body[data-docked] #reader { bottom: 50dvh; }
+}
+
+/* ---------- Search panel ---------- */
+.search-form { display: grid; gap: 10px; padding: 14px 0; }
+.search-row { display: flex; gap: 8px; }
+.search-form .input { height: 38px; background: var(--rb-surface); border-color: var(--rb-border); }
+.search-form input[type="text"] { flex: 1; min-width: 0; }
+.search-options { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 14px; }
+.search-options select { width: auto; height: 32px; }
+.search-option { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.search-option input { accent-color: var(--reader-accent); }
+.search-form button {
+  flex: none; height: 38px; padding: 0 14px; border: 1px solid var(--rb-border);
+  border-radius: var(--radius-sm); background: transparent; color: inherit;
+  font-size: 14px; cursor: pointer;
+}
+.search-form button:hover { background: var(--rb-hover); }
+.search-status { margin: 0; padding: 0 0 10px; color: var(--rb-muted); font-size: 14px; }
+.search-nav { display: flex; gap: 8px; padding: 0 0 10px; }
+.search-nav button {
+  flex: 1; height: 38px; border: 1px solid var(--rb-border); border-radius: var(--radius-sm);
+  background: transparent; color: inherit; font-size: 14px; cursor: pointer;
+}
+.search-nav button:hover:not(:disabled) { background: var(--rb-hover); }
+.search-nav button:disabled { opacity: 0.35; cursor: default; }
+.search-results { display: grid; gap: 6px; }
+.search-hit {
+  text-align: left; padding: 8px 10px; border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: inherit; font-size: 14px; line-height: 1.4; cursor: pointer;
+}
+.search-hit:hover { background: var(--rb-hover); }
+.search-hit.is-current { background: var(--rb-hover); color: var(--reader-accent); font-weight: 600; }
+.search-match { font-weight: 700; }
 
 .rp-group { padding: 14px 0; border-bottom: 1px solid var(--rb-border); display: grid; gap: 12px; }
 .rp-group:last-of-type { border-bottom: 0; }
@@ -186,6 +266,7 @@ foliate-view { display: block; width: 100%; height: 100%; }
 @media (max-width: 640px) {
   .rb-btn-label { display: none; }
   .rb-nav { min-width: 40px; }
+  .rb-progress { flex: 1 1 100px; min-width: 60px; }
   .reader-panel { width: 100vw; }
   .reader-panel-end { top: auto; max-height: 82vh; border-left: 0; border-top: 1px solid var(--rb-border);
     border-radius: var(--radius) var(--radius) 0 0; }
