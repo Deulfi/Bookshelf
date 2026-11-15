@@ -16,17 +16,8 @@ export class Bars {
             top: document.getElementById('reader-top'),
             bottom: document.getElementById('reader-bottom'),
         }
-        for (const [name, bar] of Object.entries(this.#bars)) {
-            const entries = layoutItems(layout[name])
-            for (const { id, ...options } of entries) {
-                const item = create(id, ctx, options)
-                if (item === undefined) warn(`unknown bar element “${id}”`)
-                if (!item) continue
-                item.el.dataset.element = id
-                bar.append(item.el)
-                this.#items.push(item)
-            }
-            bar.hidden = entries.length === 0
+        this.#build(layout)
+        for (const bar of Object.values(this.#bars)) {
             // keep the bars up while the pointer or keyboard focus is on them
             bar.addEventListener('pointerenter', () => this.show(false))
             bar.addEventListener('pointerleave', () => this.#scheduleHide())
@@ -34,6 +25,32 @@ export class Bars {
             bar.addEventListener('focusout', () => this.#scheduleHide())
         }
         this.show()
+    }
+
+    #build(layout) {
+        for (const [name, bar] of Object.entries(this.#bars)) {
+            const entries = layoutItems(layout[name])
+            for (const { id, ...options } of entries) {
+                const item = create(id, this.#ctx, options)
+                if (item === undefined) warn(`unknown bar element “${id}”`)
+                if (!item) continue
+                item.el.dataset.element = id
+                bar.append(item.el)
+                this.#items.push(item)
+            }
+            bar.hidden = entries.length === 0
+        }
+    }
+
+    /** Replace both bars with a new layout (saved in the bar editor), keeping the position. */
+    rebuild(layout, location) {
+        for (const item of this.#items) item.destroy?.()
+        this.#items = []
+        for (const bar of Object.values(this.#bars)) bar.replaceChildren()
+        this.#options = { enabled: true, delayMs: 3500, tapZone: 0.18, ...layout.autohide }
+        this.#build(layout)
+        if (location) this.update(location)
+        this.show(false)
     }
 
     get visible() {

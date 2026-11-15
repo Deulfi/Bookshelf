@@ -377,3 +377,16 @@ def test_book_file_is_revalidated_not_downloaded_again(admin_client: TestClient)
         admin_client.get(f"/books/{book_id}/file", headers={"If-None-Match": '"other"'}).status_code
         == 200
     )
+
+
+def test_bar_editor_panel_and_icons(admin_client: TestClient) -> None:
+    book_id = upload(admin_client, "c.epub", make_chapter_epub()).json()["id"]
+    page = admin_client.get(f"/read/{book_id}").text
+    data = bootstrap(page)
+    assert data["layoutUrl"] == "/api/reader/layout"
+    assert data["layoutSaveUrl"] == "/settings/reader/layout"
+    assert 'data-panel="bars"' in page
+    assert 'data-icon="layout"' in page
+    settings = admin_client.get("/settings").text
+    assert 'id="reader-icons"' in settings and 'data-icon="layout"' in settings
+    assert '"/static/js/reader/layout-editor.js"' in settings  # import map entry

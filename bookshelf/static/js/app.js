@@ -123,6 +123,11 @@
     const current = max > 0 ? Math.round((track.scrollLeft / max) * (pages - 1)) : 0;
     [...dots.children].forEach((dot, page) => dot.setAttribute("aria-current", String(page === current)));
   }
+  // The book page's series row starts with the current book in view.
+  document.querySelectorAll(".series-row").forEach((track) => {
+    const current = track.querySelector(".is-current");
+    if (current) track.scrollLeft = current.offsetLeft - (track.clientWidth - current.offsetWidth) / 2;
+  });
   const updateAllHscroll = () => document.querySelectorAll("[data-hscroll]").forEach(updateHscroll);
   updateAllHscroll();
   window.addEventListener("resize", updateAllHscroll);

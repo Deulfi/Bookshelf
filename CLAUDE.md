@@ -22,7 +22,8 @@ bookshelf/
   main.py            create_app(): wires settings, DB, storage, routers, error handlers
   config.py          Settings dataclass, read from BOOKSHELF_* environment variables
   db.py              engine, Base, utcnow(), run_migrations() (Alembic runs on startup)
-  models.py          User, AuthSession, Book, ReadingProgress, ReaderProfile, WebReadingTime
+  models.py          User, AuthSession, Book, ReadingProgress, ReaderProfile, WebReadingTime,
+                     ReadingSession (web reader sittings for the book page's session log)
   deps.py            FastAPI dependencies + Annotated aliases (DB, CurrentUser, AdminUser, ...)
   storage.py         file layout under the data dir (books/<user id>/ library folders, covers/,
                      files/, tmp/, reader/); library_root(user_id) is where a user's books live
@@ -32,7 +33,8 @@ bookshelf/
   icons.py           inline SVG icon set used via {{ icon("name") }}
   routers/           thin HTTP layer: auth, library, reader, stats, account, admin, kosync,
                      opds, webdav
-  services/          business logic, no HTTP: library, users, sessions, progress, covers,
+  services/          business logic, no HTTP: library, users, sessions (logins), progress (sync
+                     record, manual progress), scanner (library folder scans), covers,
                      hashing, files (WebDAV store), reading_stats (KOReader + web reader stats),
                      reader_config (web reader config layers and preferences),
                      chapters (chapter of a sync position, for book pages)

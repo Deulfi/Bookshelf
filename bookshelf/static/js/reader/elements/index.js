@@ -17,7 +17,8 @@
 // A plugin module may also export an array of such definitions.
 import { ui } from './ui.js'
 import {
-    spacer, space, exit, title, chapterTitle, toc, settings, search, themeToggle, fullscreen,
+    spacer, space, exit, title, chapterTitle, toc, settings, barEditor, search, themeToggle,
+    fullscreen,
 } from './basic.js'
 import { prevChapter, nextChapter, prevPage, nextPage } from './navigation.js'
 import { goBack, goForward } from './history.js'
@@ -49,15 +50,18 @@ export function register(definition, source = 'built-in') {
 }
 
 for (const element of [
-    spacer, space, exit, title, chapterTitle, toc, settings, search, themeToggle, fullscreen,
-    prevChapter, nextChapter, prevPage, nextPage,
+    spacer, space, exit, title, chapterTitle, toc, settings, barEditor, search, themeToggle,
+    fullscreen, prevChapter, nextChapter, prevPage, nextPage,
     goBack, goForward,
     progressBar, progressText, chapterProgress, chapterCounter, pageCounter,
 ]) register(element)
 
 /** Import drop-in plugins (module URLs); a broken plugin is logged and skipped. */
+const loaded = new Set() // plugin URLs already imported (the bar editor asks again)
+
 export async function loadPlugins(urls = []) {
-    await Promise.all(urls.map(async url => {
+    await Promise.all(urls.filter(url => !loaded.has(url)).map(async url => {
+        loaded.add(url)
         try {
             const module = await import(url)
             const definitions = Array.isArray(module.default) ? module.default : [module.default]

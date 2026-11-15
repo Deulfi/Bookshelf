@@ -38,6 +38,9 @@ Everything runs in one small Docker container with a single SQLite database.
 
 - **Simple uploads.** Drag and drop files or whole folders anywhere on the page, or pick them.
   Duplicates are detected.
+- **Series.** The *Series* switch in the library shows each series as one stack of covers (the
+  newest volume on top, with the number of books); a book's page lists the other books of its
+  series. The switch is remembered.
 - **Library folders.** Books are stored as `Author/Series/Title.ext`. Copy files into the folder
   yourself, or point Bookshelf at an existing one, and a scan adds them.
 - **Automatic metadata.** Title, author, series, description and cover are read from EPUB, FB2, CBZ
@@ -194,10 +197,12 @@ each app opens where another left off; book pages show the chapter ("Chapter 151
 When another device read on since you last read in this browser, the reader asks where to
 continue. *Reader settings → Sync* can switch that to always use the latest position.
 
-**Arranging the bars.** *Settings → Web reader* has a bar editor: drag elements from *Available
-elements* into the top or bottom bar, drag them to reorder, or use the arrow buttons (handy on a
-phone). The gear on an element shows its options, for example the text of the chapter counter.
-The same card sets how the bars hide and how far to scroll past a chapter end.
+**Arranging the bars.** *Settings → Web reader* shows a small preview of both bars; *Edit bars*
+opens the bar editor: drag elements from *Available elements* into the top or bottom bar, drag
+them to reorder, or use the arrow buttons (handy on a phone). The gear on an element shows its
+options, for example the text of the chapter counter. *Behaviour* sets how the bars hide and how
+far to scroll past a chapter end. The same editor is in the reader itself (*Reader settings →
+Arrange the bars*, or the *Bar editor* element), and saving there changes the bars right away.
 
 For web novels with thousands of chapters, the default bottom bar has a **chapter progress bar**:
 it only moves within the current chapter, so a slip never jumps hundreds of chapters. The book-wide
@@ -243,8 +248,9 @@ merge entry by entry, so you only list what you add or change. `"hidden": true` 
 }
 ```
 
-- **Bar elements:** `exit`, `title`, `chapter-title`, `spacer`, `toc`, `settings`, `theme-toggle`,
-  `fullscreen`, `prev-chapter`, `next-chapter`, `prev-page`, `next-page`, `progress-bar`,
+- **Bar elements:** `exit`, `title`, `chapter-title`, `spacer` (flexible), `space` (fixed width),
+  `toc`, `search`, `settings`, `bar-editor`, `theme-toggle`, `fullscreen`, `prev-chapter`,
+  `next-chapter`, `prev-page`, `next-page`, `go-back`, `go-forward`, `progress-bar`,
   `progress-text`, `chapter-progress`, `chapter-counter`, `page-counter`, plus any plugin. Their
   options are the ones the bar editor shows (e.g. `{"id": "chapter-counter", "format": "Ch. {current}"}`).
 - **Themes:** `id`, `label`, `scheme` (`light`/`dark`), `bg`, `fg`, optional `link`, `accent` and

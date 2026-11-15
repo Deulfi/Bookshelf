@@ -45,7 +45,35 @@ _PATHS: dict[str, str] = {
     'M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>',
     "undo": '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
     "redo": '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>',
+    "save": '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>'
+    '<path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/>',
+    "reset": '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+    "layout": '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 8h18M3 16h18"/>',
+    "stack": '<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>',
 }
+
+# Icons the web reader's bar elements may use; rendered into the reader and settings pages
+# (a <template id="reader-icons">) for the scripts to clone.
+READER_ICONS = (
+    "arrow-left",
+    "arrow-right",
+    "chevron-left",
+    "chevron-right",
+    "list",
+    "search",
+    "settings",
+    "x",
+    "sun",
+    "maximize",
+    "book",
+    "undo",
+    "redo",
+    "layout",
+)
+
+
+def reader_icons() -> dict[str, Markup]:
+    return {name: icon(name, 20) for name in READER_ICONS}
 
 
 def icon(name: str, size: int = 20) -> Markup:

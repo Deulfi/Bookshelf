@@ -1,9 +1,18 @@
 {% from "_macros.html" import cover %}
-<a class="book-card" href="/books/{{ entry.book.id }}">
-  <div class="cover-frame">
+{% set stacked = entry.series_count > 1 %}
+<a class="book-card" href="/books/{{ entry.book.id }}"{% if stacked %} title="{{ entry.book.series }}: {{ entry.series_count }} books"{% endif %}>
+  <div class="cover-frame{{ ' is-stack' if stacked }}">
+    {% if stacked %}
+    {# the books before this one, peeking out behind it (furthest first) #}
+    {% for depth in range([entry.series_count - 1, 2]|min, 0, -1) %}
+    {% set behind = entry.stack[depth - 1] if entry.stack|length >= depth else none %}
+    <div class="stack-layer stack-{{ depth }}" aria-hidden="true">{% if behind %}{{ cover(behind) }}{% else %}<div class="cover"></div>{% endif %}</div>
+    {% endfor %}
+    {% endif %}
     {{ cover(entry.book) }}
-    {% if entry.book.device_sync_at or entry.status == 'finished' %}
+    {% if entry.book.device_sync_at or entry.status == 'finished' or stacked %}
     <div class="cover-badges">
+      {% if stacked %}<span class="badge-series" title="{{ entry.series_count }} books in this series">{{ entry.series_count }}</span>{% endif %}
       {% if entry.book.device_sync_at %}<span class="badge-device" title="Marked for e-reader">{{ icon('tablet', 13) }}</span>{% endif %}
       {% if entry.status == 'finished' %}<span class="badge-done" title="Finished">{{ icon('check', 14) }}</span>{% endif %}
     </div>
@@ -13,7 +22,12 @@
     {% endif %}
   </div>
   <div class="book-meta">
+    {% if stacked %}
+    <div class="book-title">{{ entry.book.series }}</div>
+    <div class="book-author">{{ entry.series_count }} books{% if entry.book.author %} · {{ entry.book.author }}{% endif %}</div>
+    {% else %}
     <div class="book-title">{{ entry.book.title }}</div>
     {% if entry.book.author %}<div class="book-author">{{ entry.book.author }}</div>{% endif %}
+    {% endif %}
   </div>
 </a>

@@ -36,6 +36,7 @@ export class Panels extends EventTarget {
         if (panel.hasAttribute('data-docked')) document.body.dataset.docked = panel.classList
             .contains('reader-panel-end') ? 'end' : 'start'
         else this.scrim.hidden = false
+        document.body.dataset.panel = name
         this.open = name
         this.dispatchEvent(new CustomEvent('open', { detail: { name, panel } }))
         panel.querySelector('[data-autofocus], button, input, select, a')?.focus({ preventScroll: true })
@@ -43,10 +44,14 @@ export class Panels extends EventTarget {
 
     close(notify = true) {
         if (!this.open) return
-        this.#panels.get(this.open).hidden = true
+        const name = this.open
+        this.#panels.get(name).hidden = true
         this.scrim.hidden = true
         delete document.body.dataset.docked
+        delete document.body.dataset.panel
         this.open = null
+        // "closed" fires for every panel that goes away, also when another one replaces it
+        this.dispatchEvent(new CustomEvent('closed', { detail: { name } }))
         if (notify) this.dispatchEvent(new Event('close'))
     }
 
@@ -413,7 +418,7 @@ function stepButton(text, label) {
     return b
 }
 
-export function buildSettings(container, config, prefs) {
+export function buildSettings(container, config, prefs, { onArrangeBars } = {}) {
     const updaters = new Map()
     container.replaceChildren()
     for (const section of config.settings?.sections ?? []) {
@@ -452,6 +457,14 @@ export function buildSettings(container, config, prefs) {
     reset.textContent = 'Reset to defaults'
     reset.addEventListener('click', () => prefs.reset())
     container.append(reset)
+    if (onArrangeBars) {
+        const arrange = document.createElement('button')
+        arrange.type = 'button'
+        arrange.className = 'btn rp-reset'
+        arrange.textContent = 'Arrange the bars…'
+        arrange.addEventListener('click', onArrangeBars)
+        container.append(arrange)
+    }
 
     prefs.addEventListener('change', ({ detail }) => {
         for (const key of detail.keys) updaters.get(key)?.(prefs.get(key))

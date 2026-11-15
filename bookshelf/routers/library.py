@@ -37,8 +37,16 @@ def library_page(
     status: str = "all",
     sort: str = "recent",
     device: bool = False,
+    group: bool = False,
+    group_set: bool = False,
     page: int = 1,
 ) -> Response:
+    """The library. ``group`` shows each series as one card; the form always sends
+    ``group_set`` with it, and the choice is remembered for the next visit."""
+    if group_set and group != user.group_series:
+        user.group_series = group
+        db.commit()
+    grouped = group if group_set else user.group_series
     status = status if status in library.STATUSES else "all"
     sort = sort if sort in library.SORTS else "recent"
     page = max(page, 1)
@@ -49,6 +57,7 @@ def library_page(
         status=status,
         sort=sort,
         device_only=device,
+        group_series=grouped,
         limit=PAGE_SIZE,
         offset=(page - 1) * PAGE_SIZE,
     )
@@ -80,6 +89,7 @@ def library_page(
         "status": status,
         "sort": sort,
         "device": device,
+        "grouped": grouped,
         "device_count": library.count_device_books(db, user, q),
         "entries": result.entries,
         "next_url": next_url,
@@ -188,6 +198,7 @@ def _render_book(
         chapter=chapter,
         chapter_total=outline.chapter_total if outline else None,
         chapter_kind="Chapter" if outline and outline.toc else "Section",
+        series=library.series_books(db, user, entry.book),
         error=error,
         progress_error=progress_error,
         **_sessions_page(request, db, storage, user, entry.book, offset=0),

@@ -98,3 +98,10 @@ public methods and events.
   either fork. If foliate ever fixes the start too, `blockEnd()` stays harmless.
 - **`view.getTOCItemOf(target)`** takes what `resolveNavigation` understands (a CFI, an href, a
   fraction or a section index), not KOReader XPointers. Convert first, as `chapterLabelOf` does.
+- **The paginator scrolls back to its anchor.** After a jump the paginator keeps the target as
+  `#anchor` and scrolls to it again on every re-layout (`expand()` after fonts load, its
+  ResizeObserver). It also ignores the first scroll after a jump (`#justAnchored`), so moving
+  the view right after `goTo` is undone by the next re-layout. `Engine.goToMatch` in
+  `../reader/engine.js` waits for the layout to settle, moves the view, then makes one more
+  1px scroll after the paginator's 250 ms debounce: that one counts, and the anchor becomes
+  what is on screen.

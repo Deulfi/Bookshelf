@@ -51,6 +51,22 @@
     <div class="panel-body settings"></div>
   </aside>
 
+  <div class="tap-zone-guide" id="tap-zone-guide" aria-hidden="true" hidden>
+    <span class="tz-line tz-top"><span>Tap above to show or hide the bars</span></span>
+    <span class="tz-line tz-bottom"><span>Tap below to show or hide the bars</span></span>
+  </div>
+
+  <aside class="reader-panel reader-panel-center" data-panel="bars" aria-label="Bar editor" hidden>
+    <div class="panel-head">
+      <h2>Arrange bars</h2>
+      <span class="le-status small" role="status"></span>
+      <button type="button" class="rb-btn" data-le-save disabled title="Save the bars" aria-label="Save the bars">{{ icon('save', 20) }}</button>
+      <button type="button" class="rb-btn" data-le-reset title="Reset both bars and their behaviour to the defaults" aria-label="Reset to the defaults">{{ icon('reset', 20) }}</button>
+      <button type="button" class="rb-btn" data-close title="Close (unsaved changes are dropped)" aria-label="Close">{{ icon('x', 20) }}</button>
+    </div>
+    <div class="panel-body layout-editor"></div>
+  </aside>
+
   <dialog class="sync-dialog" id="sync-dialog" aria-labelledby="sync-title">
     <form method="dialog">
       <h2 id="sync-title">Continue where?</h2>

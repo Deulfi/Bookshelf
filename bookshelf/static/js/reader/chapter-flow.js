@@ -39,6 +39,11 @@ export class ChapterFlow {
         engine.addEventListener('relocate', () => this.#scheduleCheck())
     }
 
+    /** New layout.chapterFlow numbers (saved in the bar editor). */
+    setOptions(options) {
+        this.#options = { ...this.#options, ...options }
+    }
+
     setEnabled(enabled) {
         this.#enabled = enabled
         this.#check()

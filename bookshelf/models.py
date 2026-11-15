@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import ForeignKey, Index, String, Text, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from .db import Base, utcnow
@@ -32,6 +32,8 @@ class User(Base):
     # bcrypt(md5(password)) – verifies both web logins and KOReader's md5-based sync key.
     password_hash: Mapped[str] = mapped_column(String(100))
     is_admin: Mapped[bool] = mapped_column(default=False)
+    # Library view: show each series as one stacked card (the "Series" switch).
+    group_series: Mapped[bool] = mapped_column(default=False, server_default=false())
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
     books: Mapped[list[Book]] = relationship(

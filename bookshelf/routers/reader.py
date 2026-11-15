@@ -10,31 +10,13 @@ from pydantic import BaseModel, Field
 
 from ..deps import DB, AppStorage, CurrentUser
 from ..formats import READABLE_FORMATS
-from ..icons import icon
+from ..icons import reader_icons
 from ..models import ReadingProgress, User
 from ..services import library, progress, reader_config, reading_stats
 from ..services.library import BookEntry
 from ..templating import render
 
 router = APIRouter()
-
-
-# Icons the reader's bar elements may use; rendered into the page for the scripts to clone.
-READER_ICONS = (
-    "arrow-left",
-    "arrow-right",
-    "chevron-left",
-    "chevron-right",
-    "list",
-    "search",
-    "settings",
-    "x",
-    "sun",
-    "maximize",
-    "book",
-    "undo",
-    "redo",
-)
 
 
 def _entry_or_404(db: DB, user: User, book_id: int) -> BookEntry:
@@ -74,6 +56,8 @@ def read_book(
             "positionUrl": f"/api/books/{book.id}/position",
         },
         "prefsUrl": "/api/reader/prefs",
+        "layoutUrl": "/api/reader/layout",
+        "layoutSaveUrl": "/settings/reader/layout",
         "fontsUrl": "/reader/fonts/",
         "config": reader_config.effective_config(storage, user),
         "prefs": reader_config.get_prefs(db, user),
@@ -90,7 +74,7 @@ def read_book(
         user=user,
         book=book,
         bootstrap=bootstrap,
-        reader_icons={name: icon(name, 20) for name in READER_ICONS},
+        reader_icons=reader_icons(),
     )
 
 

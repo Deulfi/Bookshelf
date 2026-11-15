@@ -16,6 +16,12 @@
       <span>{{ icon('tablet', 15) }} On e-reader <small>{{ device_count }}</small></span>
     </label>
     {% endif %}
+    {# group_set says the switch was sent; without it the saved choice applies #}
+    <input type="hidden" name="group_set" value="true">
+    <label class="pill pill-toggle" title="Show each series as one stack of covers">
+      <input type="checkbox" name="group" value="true" {{ 'checked' if grouped }}>
+      <span>{{ icon('stack', 15) }} Series</span>
+    </label>
   </div>
   {% endif %}
 

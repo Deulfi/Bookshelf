@@ -5,10 +5,11 @@ The effective configuration is built from three layers, later ones winning:
 1. built-in defaults (``bookshelf/reader/defaults/*.json``),
 2. optional server-wide files in ``<data_dir>/reader/`` (``layout.json``, ``settings.json``,
    ``themes.json``), edited by whoever runs the server,
-3. the user's own override, stored in the database and edited on the settings page.
+3. the user's own override file, ``<data_dir>/reader/users/<username>.json``, edited on the
+   settings page (bar editor and JSON editor) or by hand.
 
 Besides the configuration, each user has *preferences*: the values currently chosen in the
-reader's settings panel (theme, font size, ...).
+reader's settings panel (theme, font size, ...), stored in the database (``ReaderProfile``).
 """
 
 from __future__ import annotations

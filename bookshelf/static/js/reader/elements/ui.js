@@ -45,9 +45,12 @@ function slider({ label, onSeek, showValue = true, format = percent, disabled = 
     if (output) el.append(output)
     let dragging = false
     let frame = 0
+    // filled part of the track (Chrome; Firefox draws it with ::-moz-range-progress)
+    const fill = fraction => input.style.setProperty('--rb-fill', String(fraction ?? 0))
     input.addEventListener('input', () => {
         dragging = true
         const fraction = input.value / 1000
+        fill(fraction)
         if (output) output.textContent = format(fraction)
         cancelAnimationFrame(frame)
         frame = requestAnimationFrame(() => onSeek(fraction, false))
@@ -62,6 +65,7 @@ function slider({ label, onSeek, showValue = true, format = percent, disabled = 
         set(fraction) {
             if (dragging) return
             input.value = String(Math.round((fraction ?? 0) * 1000))
+            fill(fraction)
             if (output) output.textContent = format(fraction)
         },
     }

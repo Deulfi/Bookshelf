@@ -127,7 +127,7 @@
 
   <section class="card" id="web-reader">
     <h2>{{ icon('book', 18) }} Web reader</h2>
-    <p class="card-sub">Choose what the reader’s top and bottom bars show. Drag elements into a bar and drag them to reorder, or use the arrow buttons. Themes, fonts and text settings are changed in the reader itself.</p>
+    <p class="card-sub">What the reader’s top and bottom bars show. Themes, fonts and text settings are changed in the reader itself; the bars can be arranged there too.</p>
     {{ alert(reader_error) }}
     {% if reader_file_error and not reader_error %}{{ alert('Your reader configuration file is ignored because it has an error: ' ~ reader_file_error) }}{% endif %}
     {% if request.query_params.get('reader') == 'saved' and not reader_error %}{{ alert('Reader configuration saved.', 'ok') }}{% endif %}
@@ -135,6 +135,11 @@
     <div class="layout-editor" id="layout-editor" data-elements-url="/api/reader/layout" data-save-url="/settings/reader/layout">
       <p class="muted small">Loading the bar editor…</p>
     </div>
+    <template id="reader-icons">
+      {%- for name, svg in reader_icons.items() %}
+      <span data-icon="{{ name }}">{{ svg }}</span>
+      {%- endfor %}
+    </template>
 
     <details class="howto advanced"{% if reader_error %} open{% endif %}>
       <summary>Advanced: edit the configuration as JSON</summary>

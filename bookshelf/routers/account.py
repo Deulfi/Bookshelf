@@ -9,6 +9,7 @@ from fastapi import APIRouter, Body, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 from ..deps import DB, SESSION_COOKIE, AdminUser, AppStorage, CurrentUser
+from ..icons import reader_icons
 from ..models import User
 from ..services import library, reader_config, sessions, users
 from ..services import scanner as scanner_service
@@ -41,6 +42,7 @@ def _render_settings(request: Request, db: DB, user: User, status_code: int = 20
         device_count=library.count_device_books(db, user),
         scanner=request.app.state.scanner,
         scan_choices=scanner_service.INTERVAL_CHOICES,
+        reader_icons=reader_icons(),
         **extra,
     )
 

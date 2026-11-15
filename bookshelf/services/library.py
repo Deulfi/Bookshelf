@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePath
 from typing import BinaryIO
 
-from sqlalchemy import Select, and_, case, func, select
+from sqlalchemy import Select, String, and_, case, cast, func, literal, select
 from sqlalchemy.orm import Session, aliased
 
 from ..db import utcnow
@@ -46,6 +46,10 @@ class BookEntry:
 
     book: Book
     progress: ReadingProgress | None = None
+    # Library with grouped series: how many books the series card stands for, and the
+    # books just before this one (shown as covers stacked behind it).
+    series_count: int = 1
+    stack: tuple[Book, ...] = ()
 
     @property
     def percent(self) -> int:
@@ -388,22 +392,124 @@ def find_books(
     status: str = "all",
     sort: str = "recent",
     device_only: bool = False,
+    group_series: bool = False,
     limit: int = 60,
     offset: int = 0,
 ) -> BookPage:
     """One page of ``user``'s books matching the search ``text`` and reading ``status``.
 
-    ``device_only`` restricts the result to books marked for syncing to e-readers.
+    ``device_only`` restricts the result to books marked for syncing to e-readers;
+    ``group_series`` shows each series as one entry (see ``_find_grouped``).
     """
-    statement = _scoped(select(Book, _by_hash, _by_name), user, text)
-    if status in STATUSES and status != "all":
-        statement = statement.where(_status == status)
-    if device_only:
-        statement = statement.where(Book.device_sync_at.is_not(None))
+
+    def apply(statement: Select) -> Select:
+        if status in STATUSES and status != "all":
+            statement = statement.where(_status == status)
+        if device_only:
+            statement = statement.where(Book.device_sync_at.is_not(None))
+        return statement
+
+    if group_series:
+        return _find_grouped(db, user, text, apply, sort, limit, offset)
+    statement = apply(_scoped(select(Book, _by_hash, _by_name), user, text))
     statement = statement.order_by(*_ORDER_BY.get(sort, _ORDER_BY["recent"]))
     # Fetch one extra row to know whether another page exists without a COUNT query.
     entries = _entries(db, statement.limit(limit + 1).offset(offset))
     return BookPage(entries[:limit], has_more=len(entries) > limit)
+
+
+# --- Series grouped into one card ----------------------------------------------------------------
+#
+# Each series becomes one entry: its book with the highest number (the newest volume), with the
+# number of books and the two before it for the stacked covers. Books without a series stay
+# single. Search, status and device filters apply to the books first, so "Unread" shows series
+# that have unread books. Window functions keep this in SQL, one page at a time.
+
+STACK_DEPTH = 2  # covers shown behind a series card
+
+
+def _series_key():
+    """Partition key: the series (case-insensitive), or the book itself without one."""
+    return func.coalesce(func.casefold(Book.series), literal("#", String) + cast(Book.id, String))
+
+
+def _find_grouped(
+    db: Session,
+    user: User,
+    text: str,
+    apply: Callable[[Select], Select],
+    sort: str,
+    limit: int,
+    offset: int,
+) -> BookPage:
+    part = _series_key()
+    in_series = (func.coalesce(Book.series_index, 0).desc(), Book.id.desc())
+    inner = _scoped(
+        select(
+            Book.id.label("book_id"),
+            func.row_number().over(partition_by=part, order_by=in_series).label("rank"),
+            func.count().over(partition_by=part).label("size"),
+            func.max(Book.created_at).over(partition_by=part).label("added"),
+            func.max(_last_read).over(partition_by=part).label("read"),
+            *(
+                func.lead(Book.id, n).over(partition_by=part, order_by=in_series).label(f"prev{n}")
+                for n in range(1, STACK_DEPTH + 1)
+            ),
+        ).select_from(Book),
+        user,
+        text,
+    )
+    inner = apply(inner).subquery("grouped")
+    order = {
+        "recent": (inner.c.added.desc(), Book.id.desc()),
+        "title": (func.casefold(func.coalesce(Book.series, Book.title)), Book.id),
+        "last_read": (inner.c.read.desc().nulls_last(), inner.c.added.desc(), Book.id.desc()),
+    }
+    statement = (
+        _scoped(
+            select(
+                Book,
+                _by_hash,
+                _by_name,
+                inner.c.size,
+                *(inner.c[f"prev{n}"] for n in range(1, STACK_DEPTH + 1)),
+            ),
+            user,
+        )
+        .join(inner, inner.c.book_id == Book.id)
+        .where(inner.c.rank == 1)
+        .order_by(*order.get(sort, _ORDER_BY.get(sort, _ORDER_BY["recent"])))
+        .limit(limit + 1)
+        .offset(offset)
+    )
+    rows = db.execute(statement).all()
+    stack_ids = {i for row in rows for i in row[4:] if i is not None}
+    stacked: dict[int, Book] = {}
+    if stack_ids:
+        query = select(Book).where(Book.user_id == user.id, Book.id.in_(stack_ids))
+        stacked = {book.id: book for book in db.scalars(query)}
+    entries = []
+    for book, by_hash, by_name, size, *previous in rows:
+        records = [record for record in (by_hash, by_name) if record is not None]
+        latest = max(records, key=lambda record: record.timestamp) if records else None
+        stack = tuple(stacked[i] for i in previous if i in stacked)
+        entries.append(BookEntry(book, latest, series_count=size, stack=stack))
+    return BookPage(entries[:limit], has_more=len(entries) > limit)
+
+
+def series_books(db: Session, user: User, book: Book, limit: int = 200) -> list[BookEntry]:
+    """The books of ``book``'s series in reading order (by number, then title)."""
+    if not book.series:
+        return []
+    statement = (
+        _scoped(select(Book, _by_hash, _by_name), user)
+        .where(func.casefold(Book.series) == func.casefold(book.series))
+        .order_by(
+            Book.series_index.is_(None), Book.series_index, func.casefold(Book.title), Book.id
+        )
+        .limit(limit)
+    )
+    return _entries(db, statement)
 
 
 def count_by_status(db: Session, user: User, text: str = "") -> dict[str, int]:

@@ -74,6 +74,31 @@ foliate-view { display: block; width: 100%; height: 100%; }
    way (ellipsis) instead of the slider. Crowded phone bars may squeeze it to 60px. */
 .rb-progress { flex: 1 0 160px; display: flex; align-items: center; gap: 10px; padding: 0 6px; }
 .rb-progress input { flex: 1; min-width: 0; accent-color: var(--reader-accent); }
+/* A flexible space only gets room nothing else wants: next to a progress bar (which grows) it
+   shrinks to nothing; several spaces share the free room equally. For a gap that is always
+   there, use the fixed space. */
+.reader-bar:has(> .rb-progress) > .rb-spacer { flex-grow: 0; }
+/* The slider is styled explicitly so the knob is 16px in every browser (Firefox's default
+   differs from Chrome's); the chapter ticks are placed on the knob centre's path. */
+.rb-progress input[type="range"] {
+  -webkit-appearance: none; appearance: none; height: 20px; margin: 0; padding: 0;
+  background: transparent; cursor: pointer;
+}
+.rb-progress input[type="range"]:disabled { cursor: default; }
+.rb-progress input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 2px;
+  background: linear-gradient(to right, var(--reader-accent) calc(8px + var(--rb-fill, 0) * (100% - 16px)),
+    var(--rb-border) calc(8px + var(--rb-fill, 0) * (100% - 16px)));
+}
+.rb-progress input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 16px; height: 16px; margin-top: -6px; border: 0;
+  border-radius: 50%; background: var(--reader-accent);
+}
+.rb-progress input[type="range"]::-moz-range-track { height: 4px; border-radius: 2px; background: var(--rb-border); }
+.rb-progress input[type="range"]::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--reader-accent); }
+.rb-progress input[type="range"]::-moz-range-thumb {
+  width: 16px; height: 16px; border: 0; border-radius: 50%; background: var(--reader-accent);
+}
 /* Chapter tick marks on the book progress bar (progress-bar element, "show chapters"): thin
    lines just above the bar, not crossing it. ::before widens the hover/click area without
    drawing anything. */
@@ -156,6 +181,119 @@ button.rb-tick { cursor: pointer; }
 .toc a:hover { background: var(--rb-hover); }
 .toc a.is-current { background: var(--rb-hover); color: var(--reader-accent); font-weight: 600; }
 .rp-empty { color: var(--rb-muted); font-size: 14px; padding: 12px 0; }
+
+/* The bar editor (static/js/reader/layout-editor.js, styled in app.css) follows the reading
+   theme: app.css tokens mapped to the reader's. */
+.reader-panel .layout-editor {
+  --bg: var(--reader-bg); --surface: var(--rb-surface); --surface-2: var(--rb-hover);
+  --border: var(--rb-border); --text: var(--reader-fg); --muted: var(--rb-muted);
+  --accent: var(--reader-accent); --accent-hover: var(--reader-accent); --on-accent: var(--reader-bg);
+  --accent-soft: color-mix(in srgb, var(--reader-accent) 18%, var(--reader-bg));
+  display: grid; gap: 16px; align-content: start; padding-top: 14px;
+}
+/* in the reader the real bars are the preview: edits show on them right away */
+.reader-panel .layout-editor .le-preview { display: none; }
+
+/* The bar editor is a window between the two bars, so both stay in sight while you edit them;
+   they sit above the scrim then. It is as tall as its content and centred on the screen. */
+.reader-panel-center {
+  --le-room: calc(var(--rb-height) + 12px);
+  top: 50%; bottom: auto; left: 50%; transform: translate(-50%, -50%);
+  width: min(620px, calc(100vw - 24px));
+  max-height: calc(100dvh - 2 * var(--le-room) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  border: 1px solid var(--rb-border); border-radius: var(--radius);
+}
+.reader-panel-center .panel-body { flex: 0 1 auto; min-height: 0; padding-bottom: 18px; }
+body[data-panel="bars"] .reader-bar { z-index: 45; }
+body[data-panel="bars"] .reader-scrim { background: rgb(0 0 0 / 0.18); }
+
+/* One visual language: every section has the same small heading; the two bar strips look like
+   bars (solid), the elements to add are a tray (dashed). */
+.reader-panel-center .layout-editor { gap: 18px; padding-top: 16px; }
+.reader-panel-center .layout-editor h3,
+.reader-panel-center .layout-editor .le-behaviour summary {
+  margin: 0 0 8px; font-size: 12px; font-weight: 650; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--rb-muted);
+}
+.reader-panel-center .le-bar-head .small { font-size: 12px; }
+.reader-panel-center .layout-editor .le-strip,
+.reader-panel-center .layout-editor .le-palette {
+  padding: 6px; gap: 6px; min-height: 46px; border-radius: 12px;
+}
+.reader-panel-center .layout-editor .le-strip {
+  border: 1px solid var(--rb-border); background: var(--rb-surface);
+}
+.reader-panel-center .layout-editor .le-palette-wrap > p { margin: 6px 2px 0; font-size: 12px; color: var(--rb-muted); }
+.reader-panel-center .layout-editor .le-chip {
+  min-height: 32px; font-size: 13px; background: var(--reader-bg); border-color: var(--rb-border);
+}
+.reader-panel-center .layout-editor .le-handle { padding: 5px 4px 5px 12px; }
+.reader-panel-center .layout-editor .le-tool { width: 24px; height: 24px; font-size: 15px; }
+/* a move that is not possible leaves a gap instead of a faint button; taken elements are just dim */
+.reader-panel-center .layout-editor .le-strip .le-tool:disabled { visibility: hidden; }
+.reader-panel-center .layout-editor .le-chip.is-used { opacity: 0.4; }
+.reader-panel-center .layout-editor .le-chip.is-used .le-chip-tools { display: none; }
+.reader-panel-center .layout-editor .le-chip.is-used .le-handle { padding-right: 12px; }
+/* with a mouse the chip tools show on hover, so the strips read like the bars */
+@media (hover: hover) {
+  .reader-panel-center .layout-editor .le-chip-tools { opacity: 0.35; transition: opacity 0.12s; }
+  .reader-panel-center .layout-editor .le-chip:is(:hover, :focus-within, .is-open) .le-chip-tools { opacity: 1; }
+}
+/* Behaviour: label left, a small field right */
+.reader-panel-center .layout-editor .le-behaviour {
+  padding: 12px 14px; gap: 10px; border-radius: 12px;
+  border: 1px solid var(--rb-border); background: var(--rb-surface);
+}
+.reader-panel-center .layout-editor .le-behaviour summary { margin: 0; }
+.reader-panel-center .layout-editor .le-behaviour .le-option:not(.le-option-inline) {
+  grid-template-columns: minmax(0, 1fr) 84px; align-items: center; gap: 10px; font-size: 13px;
+}
+.reader-panel-center .layout-editor .le-behaviour .le-option-inline { font-size: 13px; }
+.reader-panel-center .layout-editor .le-behaviour .input { height: 32px; padding: 0 8px; font-size: 13px; }
+.reader-panel-center .layout-editor .le-options { border-radius: 12px; font-size: 13px; }
+
+/* Inside the reader the editor follows the screen: the top bar's strip on top, the bottom
+   bar's at the bottom, the elements to add between them. Children: preview (hidden), top bar,
+   bottom bar, palette, behaviour. */
+.reader-panel-center .layout-editor > :nth-child(2) { order: 1; }
+.reader-panel-center .layout-editor > .le-palette-wrap { order: 2; }
+.reader-panel-center .layout-editor > :nth-child(3) { order: 3; }
+.reader-panel-center .layout-editor > .le-behaviour { order: 4; }
+/* Save and reset are icons in the window head, next to close */
+.reader-panel-center .panel-head h2 { margin-right: auto; }
+.reader-panel-center .panel-head .le-status { color: var(--rb-muted); font-size: 13px; }
+.reader-panel-center .panel-head .le-status.le-error { color: var(--danger, #e5484d); }
+.reader-panel-center .panel-head [data-le-save]:not(:disabled) { color: var(--reader-accent); }
+.reader-panel-center .panel-head .rb-btn:disabled { opacity: 0.4; cursor: default; }
+/* Landscape screens get a wide window, so the strips are long like the real bars; Behaviour
+   sits open beside the elements to add. */
+@media (min-width: 900px) and (orientation: landscape) {
+  .reader-panel-center { width: min(1240px, calc(100vw - 64px)); }
+  .reader-panel-center .layout-editor {
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 320px); column-gap: 20px;
+    grid-template-areas: "top top" "palette behaviour" "bottom bottom";
+  }
+  .reader-panel-center .layout-editor > :nth-child(2) { grid-area: top; }
+  .reader-panel-center .layout-editor > :nth-child(3) { grid-area: bottom; }
+  .reader-panel-center .layout-editor > .le-palette-wrap { grid-area: palette; }
+  .reader-panel-center .layout-editor > .le-behaviour { grid-area: behaviour; align-self: start; margin-top: 22px; }
+}
+
+/* the tap area at the top and bottom (shown while its field in the bar editor has focus) */
+.tap-zone-guide { position: fixed; inset: 0; z-index: 60; pointer-events: none; }
+.tz-line {
+  position: absolute; left: 0; right: 0; border-top: 2px dashed var(--reader-accent);
+  display: flex; justify-content: center;
+}
+.tz-top { top: calc(var(--zone, 0.18) * 100%); }
+.tz-bottom { bottom: calc(var(--zone, 0.18) * 100%); border-top: 0; border-bottom: 2px dashed var(--reader-accent); align-items: flex-end; }
+.tz-line > span {
+  margin: 0; padding: 2px 8px; border-radius: 999px; font-size: 12px;
+  background: var(--reader-accent); color: var(--reader-bg);
+}
+.tz-top > span { transform: translateY(calc(-100% - 6px)); }
+.tz-bottom > span { transform: translateY(calc(100% + 6px)); }
+.reader-panel .layout-editor .btn { height: 36px; padding: 0 12px; }
 
 /* ---------- Docked panels (search) ---------- */
 /* A docked panel sits beside the text: the book and the bars move aside instead of being
@@ -268,6 +406,7 @@ button.rb-tick { cursor: pointer; }
   .rb-nav { min-width: 40px; }
   .rb-progress { flex: 1 1 100px; min-width: 60px; }
   .reader-panel { width: 100vw; }
+  .reader-panel-center { width: calc(100vw - 16px); }
   .reader-panel-end { top: auto; max-height: 82vh; border-left: 0; border-top: 1px solid var(--rb-border);
     border-radius: var(--radius) var(--radius) 0 0; }
 }

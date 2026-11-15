@@ -4,6 +4,11 @@ import '../foliate/view.js'
 import { isXPointer, parseXPointer, resolveXPointer, toXPointer } from './xpointer.js'
 
 const EDGE = 2 // px from a section edge that counts as "at the edge"
+// a little longer than the paginator's scroll debounce (250 ms in paginator.js)
+const SCROLL_DEBOUNCE = 320
+
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve))
 
 /** A collapsed range at the end of a block's text. XPointers name blocks, but a range on the
  *  element itself loses its offset in foliate's CFI.fromRange (the CFI becomes the block's
@@ -42,6 +47,7 @@ export class Engine extends EventTarget {
     location = null
     #xpointers
     #sectionLabels = null
+    #matchToken = 0 // the newest goToMatch; older ones stop adjusting
 
     /** xpointers: also report positions as KOReader XPointers (EPUB only). */
     constructor(view, { xpointers = false } = {}) {
@@ -101,11 +107,28 @@ export class Engine extends EventTarget {
     }
 
     /** Show a search match: like goToPosition, but in scroll mode the match ends up about a
-     *  third down the screen instead of on the first line, so the text around it is visible. */
+     *  third down the screen instead of on the first line, so the text around it is visible.
+     *
+     *  foliate keeps the match as its scroll anchor and scrolls back to it whenever the
+     *  section is laid out again (fonts loading, ResizeObserver), and it ignores the first
+     *  scroll after a jump. So: wait for the layout to settle, move the match down, then
+     *  make one more (1px) scroll that foliate does count, which anchors it to what is now
+     *  on screen. See ../foliate/VENDORED.md ("Known quirks"). */
     async goToMatch(cfi, { jump = true } = {}) {
+        const token = ++this.#matchToken
         await this.goToPosition(cfi, { jump })
         const r = this.renderer
-        if (r?.scrolled) r.containerPosition = Math.max(0, r.containerPosition - r.size / 3)
+        if (!r?.scrolled) return
+        await r.getContents?.()[0]?.doc?.fonts?.ready
+        await nextFrame()
+        await nextFrame()
+        if (token !== this.#matchToken || !r.scrolled) return
+        const target = Math.max(0, r.containerPosition - r.size / 3)
+        if (Math.abs(target - r.containerPosition) < 2) return
+        r.containerPosition = target
+        await wait(SCROLL_DEBOUNCE)
+        if (token !== this.#matchToken) return
+        r.containerPosition = target + 1
     }
 
     #xpointerTarget(position) {

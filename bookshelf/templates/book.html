@@ -5,6 +5,28 @@
 <a class="back-link" href="/">{{ icon('arrow-left', 18) }} Library</a>
 {{ alert(error) }}
 
+{% if series|length > 1 %}
+<section class="series-strip" aria-labelledby="series-heading" data-hscroll>
+  <div class="section-head">
+    <h2 class="section-title" id="series-heading">{{ book.series }} · {{ series|length }} books</h2>
+    <div class="hscroll-dots" data-hscroll-dots role="group" aria-label="Scroll position" hidden></div>
+  </div>
+  <div class="series-row" data-hscroll-track>
+    {% for item in series %}
+    {% set current = item.book.id == book.id %}
+    <a class="series-card{{ ' is-current' if current }}" href="/books/{{ item.book.id }}"{% if current %} aria-current="page"{% endif %} title="{{ item.book.title }}">
+      <div class="cover-frame">
+        {{ cover(item.book) }}
+        {% if item.status == 'finished' %}<div class="cover-badges"><span class="badge-done" title="Finished">{{ icon('check', 12) }}</span></div>{% endif %}
+        {% if item.status == 'reading' %}<div class="cover-progress"><span style="width: {{ item.percent }}%"></span></div>{% endif %}
+      </div>
+      <span class="series-card-title">{% if item.book.series_index is not none %}<b>{{ item.book.series_index|number }}</b> {% endif %}{{ item.book.title }}</span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
 <article class="book-detail">
   <div class="detail-cover cover-frame">{{ cover(book, eager=true) }}</div>
 

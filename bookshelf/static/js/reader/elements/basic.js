@@ -3,7 +3,7 @@
 export const spacer = {
     id: 'spacer',
     label: 'Flexible space',
-    description: 'Takes up all free room, pushing the elements after it to the end of the bar',
+    description: 'Takes the free room no progress bar uses; several share it equally',
     repeatable: true,
     create() {
         const el = document.createElement('div')
@@ -108,6 +108,8 @@ export const toc = panelButton('toc', 'Contents', 'list', 'toc',
     'Opens the table of contents to jump to a chapter')
 export const settings = panelButton('settings', 'Reader settings', 'settings', 'settings',
     'Opens the panel for font, layout, theme and sync settings')
+export const barEditor = panelButton('bar-editor', 'Bar editor', 'layout', 'bars',
+    'Opens a panel to arrange the top and bottom bars right in the reader')
 export const search = {
     id: 'search',
     label: 'Search',

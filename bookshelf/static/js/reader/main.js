@@ -66,12 +66,50 @@ applyAppearance()
 await loadPlugins(boot.plugins ?? [])
 bars = new Bars(ctx, config.layout ?? {})
 const toc = buildTOC(panels.get('toc').querySelector('.panel-body'), engine, () => panels.close())
-buildSettings(panels.get('settings').querySelector('.panel-body'), config, prefs)
+buildSettings(panels.get('settings').querySelector('.panel-body'), config, prefs, {
+    onArrangeBars: () => panels.show('bars'),
+})
 buildSearch(panels.get('search').querySelector('.panel-body'), engine)
+// ---------- bar editor (a window between the bars; edits show on the real bars) ----------
+
+let barEditor = null // Promise of the editor handle, mounted the first time the window opens
+const tapGuide = document.getElementById('tap-zone-guide')
 panels.addEventListener('open', ({ detail }) => {
     bars.show(panels.docked) // beside a docked panel the book stays usable: bars auto-hide
     if (detail.name === 'toc') toc.reveal()
+    if (detail.name === 'bars' && !barEditor) barEditor = openBarEditor(detail.panel)
 })
+panels.addEventListener('closed', async ({ detail }) => {
+    if (detail.name !== 'bars' || !barEditor) return
+    showTapZone(null)
+    const editor = await barEditor
+    if (!editor?.dirty) return
+    // closed without saving: back to the saved bars, and a fresh editor next time
+    editor.discard()
+    barEditor = null
+    panels.get('bars').querySelector('.panel-body').replaceChildren()
+    bars.rebuild(config.layout, engine.location)
+})
+
+function showTapZone(fraction) {
+    tapGuide.hidden = fraction === null
+    if (fraction !== null) tapGuide.style.setProperty('--zone', String(fraction))
+}
+
+async function openBarEditor(panel) {
+    const { mountLayoutEditor } = await import('./layout-editor.js')
+    return mountLayoutEditor(panel.querySelector('.panel-body'), {
+        elementsUrl: boot.layoutUrl, saveUrl: boot.layoutSaveUrl, icon,
+        toolbar: panel.querySelector('.panel-head'),
+        onChange: layout => bars.rebuild(layout, engine.location),
+        onTapZone: showTapZone,
+        onSaved: layout => {
+            config.layout = layout
+            bars.rebuild(layout, engine.location)
+            chapterFlow?.setOptions(layout.chapterFlow ?? {})
+        },
+    })
+}
 panels.addEventListener('close', () => bars.show())
 
 chapterFlow = new ChapterFlow(engine, {
