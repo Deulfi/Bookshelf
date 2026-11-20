@@ -1,6 +1,6 @@
 [project]
 name = "bookshelf"
-version = "0.3.2"
+version = "0.3.3"
 description = "A lean, self-hosted e-book library with KOReader progress sync and OPDS."
 readme = "README.md"
 license = "MIT"
