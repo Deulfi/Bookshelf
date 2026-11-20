@@ -95,3 +95,26 @@ def test_scan_button_is_for_admins_with_a_shared_folder(app_client):
     client.post("/login", data={"username": "bob", "password": "bobpass1"})
     assert "data-scan-trigger" not in client.get("/").text
     assert client.post("/api/library/scan").status_code == 403
+
+
+def test_ignore_patterns_set_on_the_settings_page(app_client, library_dir):
+    client, app = app_client
+    scanner = app.state.scanner
+    while scanner.running:
+        time.sleep(0.01)
+    (library_dir / "@eaDir").mkdir()
+    _add_book(library_dir / "@eaDir", "Thumb.epub").write_bytes(make_epub(title="Junk"))
+    os.utime(library_dir / "@eaDir" / "Ada" / "Thumb.epub", (time.time() - 60,) * 2)
+    response = client.post(
+        "/settings/scan-ignore", data={"patterns": " @eaDir , *.tmp,,"}, follow_redirects=False
+    )
+    assert response.status_code == 303
+    assert scanner.ignore_patterns == ("@eaDir", "*.tmp")
+    assert scanner.interval_minutes == 0  # other saved settings stay
+    assert scanner.run_scan().imported == 0
+    assert 'value="@eaDir, *.tmp"' in client.get("/settings").text
+
+    client.post("/settings/scan-interval", data={"minutes": "60"})
+    assert scanner.ignore_patterns == ("@eaDir", "*.tmp")
+    client.post("/settings/scan-ignore", data={"patterns": ""})
+    assert scanner.run_scan().imported == 1

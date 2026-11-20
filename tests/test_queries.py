@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from fastapi.testclient import TestClient
 
 from bookshelf.models import Book, ReadingProgress, author_sort_key
@@ -131,6 +133,22 @@ def test_status_filters_counts_and_shelf(admin_client: TestClient) -> None:
 
     book_page = admin_client.get("/books/4")
     assert "50%" in book_page.text
+
+
+def test_status_filter_is_remembered(admin_client: TestClient) -> None:
+    add_books(admin_client, [{"title": t} for t in ("Unread", "Reading")])
+    add_progress(admin_client, f"{1:032x}", 0.4, 100)
+
+    def checked(html: str) -> str:
+        return re.search(r'name="status" value="(\w+)" checked', html).group(1)
+
+    assert checked(admin_client.get("/").text) == "all"
+    admin_client.get("/?status=unread", headers={"HX-Request": "true"})
+    # the next visit without a filter shows the one chosen last
+    page = admin_client.get("/").text
+    assert checked(page) == "unread" and card_titles(page) == ["Unread"]
+    assert checked(admin_client.get("/?status=all").text) == "all"
+    assert checked(admin_client.get("/").text) == "all"
 
 
 def test_opds_pagination(admin_client: TestClient) -> None:

@@ -138,3 +138,11 @@ def set_scan_interval(
     except ValueError:
         return Response("Unsupported interval.", status_code=422)
     return RedirectResponse("/settings#library-folder", status_code=303)
+
+
+@router.post("/settings/scan-ignore")
+def set_scan_ignore(
+    request: Request, _admin: AdminUser, patterns: Annotated[str, Form()] = ""
+) -> Response:
+    request.app.state.scanner.set_ignore(patterns)
+    return RedirectResponse("/settings#library-folder", status_code=303)

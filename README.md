@@ -7,7 +7,7 @@ Everything runs in one small Docker container with a single SQLite database.
 > **This is a fork.** It is an opinionated fork of
 > [Bookshelf by Hannes Thöne](https://github.com/hthoene/Bookshelf). It keeps the original's small
 > footprint and adds some things like: a configurable **web reader**, **library scanner** with Audiobookshelf
-> compatible folder structur(`Author/Series/Title`) and **reading session list**.
+> compatible folder structure (`Author/Series/Vol 1 - Title/`) and **reading session list**.
 > It is shaped by one way of reading (long web novels, scroll mode) and does
 > not try to be a complete library manager. If you want the lean original, use upstream. If you
 > want a full-featured library with audiobooks, annotations and Kobo sync, look at
@@ -41,12 +41,13 @@ Everything runs in one small Docker container with a single SQLite database.
 - **Series.** The *Series* switch in the library shows each series as one stack of covers (the
   newest volume on top, with the number of books); a book's page lists the other books of its
   series. The switch is remembered.
-- **Library folders.** Books are stored as `Author/Series/Title.ext`. Copy files into the folder
-  yourself, or point Bookshelf at an existing one, and a scan adds them.
+- **Library folders.** Each book gets its own folder, laid out the way Audiobookshelf reads it
+  (`Author/Series/Vol 1 - Title/Title.epub`). Copy files into the folder yourself, or point
+  Bookshelf at an existing one, and a scan adds them.
 - **Automatic metadata.** Title, author, series, description and cover are read from EPUB, FB2, CBZ
   (ComicInfo) and PDF files. Other formats fall back to `Author - Title.ext` file names.
 - **KOReader progress sync.** Built-in server that is compatible with KOReader's *Progress sync* plugin.
-  Your library shows reading progress, a *Continue reading* row, and Reading/Unread/Finished filters.
+  Your library shows reading progress, a *Continue reading* row, and Reading/Unread/Finished filters (the last one chosen stays on).
   On a book's page you can set the progress by percentage or chapter, or reset it.
 - **OPDS catalog.** Browse, search and download your books directly from your e-reader.
 - **Books on your e-reader.** Let KOReader keep your whole library, your unread books or a hand-picked
@@ -119,18 +120,30 @@ image) and `BOOKSHELF_PORT` (default `8080`) control the storage location and li
 
 ### Library folders
 
-Books are stored as `Author/Series/Title.ext`. Without `BOOKSHELF_INGEST_DIR` every user has their
+Uploaded books get a folder of their own, following Audiobookshelf's
+[directory structure](https://audiobookshelf.org/docs/documentation/libraries/book-library/directory-structure):
+
+| Book | Stored as |
+| --- | --- |
+| In a series, with a number | `Author/Series/Vol 2 - Title/Title.epub` |
+| In a series, without a number | `Author/Series/Title/Title.epub` |
+| Not in a series | `Author/Title/Title.epub` |
+| Without an author | `Title/Title.epub` |
+
+Editing a book's title, author or series moves its file to match. Files you copy in yourself
+stay where you put them, in any layout. Without `BOOKSHELF_INGEST_DIR` every user has their
 own library folder, `<data dir>/books/<user id>/` (`/data/books/<user id>/` in Docker). With it,
 all books live in that one shared folder. Uploads go into the library folder, and files you copy
 there yourself are picked up by a scan: on startup, with the **Scan** button next to Upload, or
 automatically on an interval an administrator picks under *Settings → Library folders* (where
 administrators can also scan every user's folder at once). A scan also
 removes entries whose file was deleted. Files uploaded by older versions under random names are
-renamed to the `Author/Series/Title` layout on the first scan. With a shared folder only
+moved into this layout on the first scan. With a shared folder only
 administrators can scan, and new files found there belong to the first administrator.
 
 Scans skip every file and folder whose name starts with a dot (such as Syncthing's `.stfolder`
-and `.stversions`) and names matching `BOOKSHELF_SCAN_IGNORE`. Books already imported from such a
+and `.stversions`) and names matching the patterns under *Settings → Library folders → Skip names*
+or in `BOOKSHELF_SCAN_IGNORE`; both apply. Books already imported from such a
 folder are removed from the library on the next scan; their files are left alone.
 
 ### Command line

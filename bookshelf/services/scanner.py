@@ -43,6 +43,7 @@ class LibraryScanner:
         self._lock = threading.Lock()
         self._started_at = 0.0
         self.last_result: ScanResult | None = None
+        storage.extra_ignore = tuple(p.casefold() for p in self.ignore_patterns)
 
     @property
     def shared(self) -> bool:
@@ -53,18 +54,47 @@ class LibraryScanner:
     def running(self) -> bool:
         return self._lock.locked()
 
+    def _state(self) -> dict:
+        try:
+            state = json.loads(self._state_file.read_text())
+        except (OSError, ValueError):
+            return {}
+        return state if isinstance(state, dict) else {}
+
+    def _save_state(self, **changes: object) -> None:
+        self._state_file.write_text(json.dumps({**self._state(), **changes}))
+
     @property
     def interval_minutes(self) -> int:
         try:
-            value = int(json.loads(self._state_file.read_text()).get("interval_minutes", 0))
-        except (OSError, ValueError, AttributeError):
+            value = int(self._state().get("interval_minutes", 0))
+        except (TypeError, ValueError):
             return 0
         return value if value in dict(INTERVAL_CHOICES) else 0
 
     def set_interval(self, minutes: int) -> None:
         if minutes not in dict(INTERVAL_CHOICES):
             raise ValueError("Unsupported scan interval.")
-        self._state_file.write_text(json.dumps({"interval_minutes": minutes}))
+        self._save_state(interval_minutes=minutes)
+
+    @property
+    def env_ignore_patterns(self) -> tuple[str, ...]:
+        """Patterns from BOOKSHELF_SCAN_IGNORE (shown, not editable, on the settings page)."""
+        return self._storage.scan_ignore
+
+    @property
+    def ignore_patterns(self) -> tuple[str, ...]:
+        """Names scans skip, as set on the settings page (fnmatch patterns)."""
+        patterns = self._state().get("ignore", [])
+        if not isinstance(patterns, list):
+            return ()
+        return tuple(p for p in patterns if isinstance(p, str))
+
+    def set_ignore(self, text: str) -> None:
+        """Save comma-separated patterns ("@eaDir, *.tmp"); the next scan skips them."""
+        patterns = tuple(dict.fromkeys(p.strip() for p in text.split(",") if p.strip()))
+        self._save_state(ignore=list(patterns))
+        self._storage.extra_ignore = tuple(p.casefold() for p in patterns)
 
     def run_scan(self, user_id: int | None = None) -> ScanResult | None:
         """Scan now and wait for it: ``user_id``'s folder, or every folder when None.

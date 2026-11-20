@@ -34,6 +34,8 @@ class User(Base):
     is_admin: Mapped[bool] = mapped_column(default=False)
     # Library view: show each series as one stacked card (the "Series" switch).
     group_series: Mapped[bool] = mapped_column(default=False, server_default=false())
+    # Library view: the reading status filter last chosen (all, reading, unread, finished).
+    library_status: Mapped[str] = mapped_column(String(16), default="all", server_default="all")
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
     books: Mapped[list[Book]] = relationship(

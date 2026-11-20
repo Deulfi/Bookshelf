@@ -34,7 +34,7 @@ def library_page(
     db: DB,
     user: CurrentUser,
     q: str = "",
-    status: str = "all",
+    status: str | None = None,
     sort: str = "recent",
     device: bool = False,
     group: bool = False,
@@ -42,12 +42,18 @@ def library_page(
     page: int = 1,
 ) -> Response:
     """The library. ``group`` shows each series as one card; the form always sends
-    ``group_set`` with it, and the choice is remembered for the next visit."""
+    ``group_set`` with it, and the choice is remembered for the next visit. The status
+    filter is remembered the same way: without ``status`` the last one chosen applies."""
     if group_set and group != user.group_series:
         user.group_series = group
         db.commit()
     grouped = group if group_set else user.group_series
+    if status is None:
+        status = user.library_status
     status = status if status in library.STATUSES else "all"
+    if status != user.library_status:
+        user.library_status = status
+        db.commit()
     sort = sort if sort in library.SORTS else "recent"
     page = max(page, 1)
     result = library.find_books(

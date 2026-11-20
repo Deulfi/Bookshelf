@@ -41,7 +41,7 @@ def test_upload_is_stored_as_author_series_title(admin_client: TestClient) -> No
     storage = admin_client.app.state.storage
     with admin_client.app.state.sessionmaker() as db:
         book = db.get(Book, book_id)
-        assert book.file_path == "Ada Lovelace/Engines/The Test Book.epub"
+        assert book.file_path == "Ada Lovelace/Engines/Vol 2 - The Test Book/The Test Book.epub"
         assert (storage.books_dir / str(book.user_id) / book.file_path).is_file()
     assert admin_client.get(f"/books/{book_id}/file").status_code == 200
 
@@ -100,7 +100,7 @@ def test_legacy_random_names_are_reorganized(admin_client: TestClient) -> None:
         user = db.get(User, book.user_id)
         assert library_service.reorganize_legacy_files(db, storage, user) == 1
         db.refresh(book)
-        assert book.file_path == "Ada Lovelace/Engines/The Test Book.epub"
+        assert book.file_path == "Ada Lovelace/Engines/Vol 2 - The Test Book/The Test Book.epub"
         assert (root / book.file_path).is_file()
         assert not (root / legacy).exists()
     assert admin_client.get(f"/books/{book_id}/file").status_code == 200

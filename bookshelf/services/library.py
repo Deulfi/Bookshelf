@@ -102,7 +102,11 @@ def import_book(
         metadata = extract_metadata(temp_path, fmt, filename)
         root = storage.library_root(user.id)
         relative = storage.schema_relative_path(
-            metadata.author, metadata.series, metadata.title or PurePath(filename).stem, fmt
+            metadata.author,
+            metadata.series,
+            metadata.title or PurePath(filename).stem,
+            fmt,
+            metadata.series_index,
         )
         stored_path = storage.store_book(temp_path, root, relative)
         book = Book(
@@ -194,7 +198,8 @@ def sync_library(
     db: Session, storage: Storage, user: User, log: Callable[[str], None] | None = None
 ) -> int:
     """Scan ``user``'s library folder: register new book files in place, move books with
-    legacy random file names to Author/Series/Title, and drop entries whose file is gone."""
+    legacy random file names to the Author/Series/Title layout, and drop entries whose file is
+    gone."""
     root = storage.library_root(user.id)
     shared = storage.ingest_dir is not None
     if shared and not root.is_dir():
@@ -240,7 +245,7 @@ _LEGACY_NAME = re.compile(r"^[0-9a-f]{32}$")
 def reorganize_legacy_files(
     db: Session, storage: Storage, user: User, log: Callable[[str], None] | None = None
 ) -> int:
-    """Move uploads stored under random names (older versions) to Author/Series/Title.ext."""
+    """Move uploads stored under random names (older versions) to the Author/Series/Title layout."""
     moved = 0
     # Legacy files sit directly in the library root, so only path-less entries are candidates.
     candidates = select(Book).where(Book.user_id == user.id, ~Book.file_path.contains("/"))
@@ -248,7 +253,9 @@ def reorganize_legacy_files(
         path = PurePath(book.file_path)
         if len(path.parts) != 1 or not _LEGACY_NAME.match(path.stem):
             continue
-        wanted = storage.schema_relative_path(book.author, book.series, book.title, book.format)
+        wanted = storage.schema_relative_path(
+            book.author, book.series, book.title, book.format, book.series_index
+        )
         final = storage.move_book(book, wanted)
         if final is None:
             continue  # file missing: prune_missing deals with it
@@ -565,7 +572,9 @@ def update_metadata(db: Session, storage: Storage, book: Book, **changes: object
     old_path = book.file_path
     final: str | None = None
     if storage.find_book_file(book) is not None:
-        wanted = storage.schema_relative_path(book.author, book.series, book.title, book.format)
+        wanted = storage.schema_relative_path(
+            book.author, book.series, book.title, book.format, book.series_index
+        )
         if wanted != old_path:
             final = storage.move_book(book, wanted)
             if final is not None:

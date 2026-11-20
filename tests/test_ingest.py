@@ -73,7 +73,7 @@ def test_update_metadata_moves_file_and_prunes_empty_dirs(env):
     path = _drop(ingest, "Ada Lovelace/Engines/The Test Book.epub", make_epub())
     book = library_service.import_from_disk(db, storage, user, path)
     library_service.update_metadata(db, storage, book, author="Someone New", series="")
-    assert book.file_path == "Someone New/The Test Book.epub"
+    assert book.file_path == "Someone New/The Test Book/The Test Book.epub"
     assert (ingest / book.file_path).is_file()
     assert not path.exists()
     assert not (ingest / "Ada Lovelace").exists()  # empty author + series chain pruned
@@ -138,14 +138,26 @@ def test_renamed_file_is_relinked_instead_of_left_broken(env):
 
 def test_metadata_move_never_overwrites_another_book(env):
     db, storage, user, ingest = env
-    a = _drop(ingest, "X/Same.epub", make_epub(title="Same", author="X", series=None))
+    a = _drop(ingest, "X/Same/Same.epub", make_epub(title="Same", author="X", series=None))
     b = _drop(ingest, "Y/B.epub", make_epub(title="Other", author="Y", series=None))
     book_a = library_service.import_from_disk(db, storage, user, a)
     book_b = library_service.import_from_disk(db, storage, user, b)
     library_service.update_metadata(db, storage, book_b, title="Same", author="X")
-    assert book_b.file_path == "X/Same (2).epub"
+    assert book_b.file_path == "X/Same/Same (2).epub"
     assert (ingest / book_a.file_path).is_file()
     assert (ingest / book_b.file_path).is_file()
+
+
+def test_layout_is_one_folder_per_book_like_audiobookshelf(env):
+    _, storage, _, _ = env
+    path = storage.schema_relative_path
+    assert path("Ann Leckie", "Imperial Radch", "Ancillary Sword", "epub", 2.0) == (
+        "Ann Leckie/Imperial Radch/Vol 2 - Ancillary Sword/Ancillary Sword.epub"
+    )
+    assert path("A", "S", "Novella", "epub", 1.5) == "A/S/Vol 1.5 - Novella/Novella.epub"
+    assert path("A", "S", "No Number", "epub") == "A/S/No Number/No Number.epub"
+    assert path("A", None, "Alone", "pdf", 3) == "A/Alone/Alone.pdf"
+    assert path(None, None, "Anonymous", "epub") == "Anonymous/Anonymous.epub"
 
 
 def test_path_segments_cannot_escape_the_library(env):

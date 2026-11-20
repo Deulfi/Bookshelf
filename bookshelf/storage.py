@@ -1,18 +1,26 @@
 """File storage layout below the data directory.
 
-<data_dir>/books/<user_id>/...   each user's library folder (Author/Series/Title.ext)
+<data_dir>/books/<user_id>/...   each user's library folder (Author/Series/Vol 1 - Title/...)
 <data_dir>/covers/<book_id>.jpg  cover thumbnails
 <data_dir>/tmp/                 in-progress uploads
 <data_dir>/files/<user_id>/     WebDAV files (e.g. KOReader statistics)
 <data_dir>/reader/              optional web reader overrides (*.json) and fonts/
 
-Books are stored as <Author>/<Series>/<Title>.<ext> below the user's library root:
-books/<user_id>/ by default, or the shared ingest_dir (e.g. a NAS share) when it is set.
-Files already in a library root are registered in place by a scan. Book.file_path is
-always relative to the library root the file lives in.
+Books are stored like Audiobookshelf expects them, one folder per book, below the user's
+library root:
+
+    <Author>/<Series>/Vol <n> - <Title>/<Title>.<ext>   (in a series; "<Title>" without a number)
+    <Author>/<Title>/<Title>.<ext>                       (no series)
+    <Title>/<Title>.<ext>                                (no author)
+
+The library root is books/<user_id>/ by default, or the shared ingest_dir (e.g. a NAS share)
+when it is set. Files already in a library root are registered in place by a scan, whatever
+their layout; only uploads and metadata edits use the one above. Book.file_path is always
+relative to the library root the file lives in.
 
 Scans skip files and folders whose name starts with "." (e.g. Syncthing's .stfolder) and names
-matching the ``scan_ignore`` patterns (BOOKSHELF_SCAN_IGNORE).
+matching the ``scan_ignore`` patterns (BOOKSHELF_SCAN_IGNORE) or the ones an administrator set on
+the settings page (``extra_ignore``).
 """
 
 from __future__ import annotations
@@ -47,11 +55,16 @@ class Storage:
         self.files_dir = root / "files"
         self.reader_dir = root / "reader"  # optional web reader config and fonts
         self.ingest_dir = ingest_dir
+        # From BOOKSHELF_SCAN_IGNORE.
         self.scan_ignore = tuple(p.casefold() for p in scan_ignore if p)
+        # Set on the settings page (``LibraryScanner.set_ignore``), on top of the environment's.
+        self.extra_ignore: tuple[str, ...] = ()
 
     def _ignored_name(self, name: str) -> bool:
         folded = name.casefold()
-        return name.startswith(".") or any(fnmatchcase(folded, p) for p in self.scan_ignore)
+        return name.startswith(".") or any(
+            fnmatchcase(folded, p) for p in (*self.scan_ignore, *self.extra_ignore)
+        )
 
     def is_ignored(self, relative: str) -> bool:
         """True if a path below a library root is skipped by scans."""
@@ -96,11 +109,23 @@ class Storage:
         return value.strip(" .")
 
     def schema_relative_path(
-        self, author: str | None, series: str | None, title: str | None, fmt: str
+        self,
+        author: str | None,
+        series: str | None,
+        title: str | None,
+        fmt: str,
+        series_index: float | None = None,
     ) -> str:
+        """Where a book belongs: its own folder, below its author and series (Audiobookshelf's
+        directory structure, which also reads the volume number from "Vol 2 - Title")."""
         name = self._clean_segment(title) or "book"
-        segments = [s for s in (self._clean_segment(author), self._clean_segment(series)) if s]
-        return "/".join([*segments, f"{name}.{fmt}"])
+        series_name = self._clean_segment(series)
+        folder = name
+        if series_name and series_index is not None:
+            number = int(series_index) if float(series_index).is_integer() else series_index
+            folder = self._clean_segment(f"Vol {number} - {name}", limit=110)
+        segments = [s for s in (self._clean_segment(author), series_name) if s]
+        return "/".join([*segments, folder, f"{name}.{fmt}"])
 
     def new_temp_path(self) -> Path:
         return self.tmp_dir / uuid.uuid4().hex

@@ -165,6 +165,11 @@ strong { font-weight: 650; }
 /* controls on the right of setting rows line up: one width (fits "Every 15 minutes"), the
    height of the Copy buttons */
 .btn.setting-control, .select.setting-control { width: 168px; height: 42px; font-size: 14.5px; }
+.setting-label:has(.setting-hint) { flex: 1 1 260px; }
+.setting-hint { display: block; margin-top: 2px; line-height: 1.45; }
+.setting-inline { display: flex; gap: 8px; }
+.setting-inline .btn { height: 42px; }
+.input.setting-control { width: 220px; }
 .btn-block { width: 100%; }
 .btn.is-copied { color: var(--accent); border-color: var(--accent); }
 .icon-btn {
@@ -771,6 +776,8 @@ code:not(.copy-value) { padding: 1px 6px; border-radius: 6px; background: var(--
   .actions form, .actions .btn { width: 100%; }
   .btn-copy span { display: none; }
   .setting-row > form:has(.setting-control), .btn.setting-control, .select.setting-control { width: 100%; }
+  .setting-inline { width: 100%; }
+  .input.setting-control { flex: 1; width: auto; min-width: 0; }
   .btn-copy { width: 46px; padding: 0; }
   .card h2 { font-size: 16px; }
   .page-head { margin-bottom: 18px; }

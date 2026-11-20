@@ -61,7 +61,7 @@
     {% if scanner.shared %}
     <p class="card-sub">All books live in the shared library folder. Bookshelf scans it on startup: new files are added (to the first administrator), entries whose file is gone are removed.</p>
     {% else %}
-    <p class="card-sub">Every user has a library folder in the data directory (<code>books/&lt;user id&gt;/</code>), organized as Author/Series/Title. Bookshelf scans all of them on startup: new files are added, entries whose file is gone are removed. Users can also scan their own folder with the Scan button.</p>
+    <p class="card-sub">Every user has a library folder in the data directory (<code>books/&lt;user id&gt;/</code>), with a folder per book like Audiobookshelf (Author/Series/Vol 1 - Title). Bookshelf scans all of them on startup: new files are added, entries whose file is gone are removed. Users can also scan their own folder with the Scan button.</p>
     {% endif %}
     <div class="setting-rows">
       <form method="post" action="/settings/scan-interval" class="setting-row">
@@ -72,6 +72,15 @@
           {% endfor %}
         </select>
         <noscript><button class="btn btn-sm">Save</button></noscript>
+      </form>
+      <form method="post" action="/settings/scan-ignore" class="setting-row">
+        <label class="setting-label" for="scan-ignore">Skip names
+          <span class="muted small setting-hint">Files and folders matching these patterns, comma-separated (<code>@eaDir, *.tmp</code>). Names starting with a dot are always skipped{% if scanner.env_ignore_patterns %}, and <code>BOOKSHELF_SCAN_IGNORE</code> adds <code>{{ scanner.env_ignore_patterns|join(', ') }}</code>{% endif %}. Books already imported from them leave the library on the next scan; their files stay.</span>
+        </label>
+        <div class="setting-inline">
+          <input class="input setting-control" id="scan-ignore" name="patterns" value="{{ scanner.ignore_patterns|join(', ') }}" placeholder="@eaDir, *.tmp" autocomplete="off" spellcheck="false">
+          <button class="btn" type="submit">Save</button>
+        </div>
       </form>
       <div class="setting-row">
         <span class="setting-label">
