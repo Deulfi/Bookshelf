@@ -54,3 +54,16 @@ def test_migrating_keeps_rows_that_reference_users(tmp_path: Path) -> None:
         assert db.scalar(text("PRAGMA foreign_keys")) == 1  # back on for the app's connections
     backups = list((tmp_path / "backups").glob("bookshelf-0007-*.db"))
     assert len(backups) == 1
+
+
+def test_migrating_works_when_backups_folder_is_unusable(tmp_path: Path) -> None:
+    # e.g. backups/ created by root: the copy goes next to the database, startup goes on
+    engine = make_engine(f"sqlite:///{(tmp_path / 'bookshelf.db').as_posix()}")
+    _upgrade_to(engine, "0007")
+    (tmp_path / "backups").write_text("not a folder")
+
+    run_migrations(engine)
+
+    with engine.connect() as db:
+        assert db.scalar(text("SELECT version_num FROM alembic_version")) != "0007"
+    assert len(list(tmp_path.glob("bookshelf-0007-*.db"))) == 1

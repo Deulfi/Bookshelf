@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import sqlite3
 from collections.abc import Iterator
@@ -13,6 +14,7 @@ from sqlalchemy import Connection, Engine, create_engine, event, text
 from sqlalchemy.exc import DatabaseError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
+log = logging.getLogger(__name__)
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 _REVISION = re.compile(r"^revision\b[^=\n]*=\s*['\"]([^'\"]+)['\"]", re.M)
 _DOWN_REVISION = re.compile(r"^down_revision\b[^=\n]*=(.*)$", re.M)
@@ -126,7 +128,10 @@ def _check_foreign_keys(connection: Connection) -> None:
 
 
 def _backup_before_migrating(engine: Engine) -> None:
-    """Copy an existing database to ``backups/`` next to it before its schema changes."""
+    """Copy an existing database to ``backups/`` next to it before its schema changes.
+
+    A copy that can't be written (say ``backups/`` belongs to root) goes next to the database
+    instead; if that fails too, a warning is logged and the migration runs anyway."""
     path = engine.url.database
     if not path or path == ":memory:" or not Path(path).exists():
         return
@@ -135,14 +140,24 @@ def _backup_before_migrating(engine: Engine) -> None:
             version = connection.scalar(text("SELECT version_num FROM alembic_version"))
         except DatabaseError:
             return  # a new database: nothing to keep
-        backups = Path(path).parent / "backups"
-        backups.mkdir(exist_ok=True)
         stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-        target = backups / f"bookshelf-{version}-{stamp}.db"
+        name = f"bookshelf-{version}-{stamp}.db"
         raw = connection.connection.driver_connection
-        with sqlite3.connect(target) as copy:
-            raw.backup(copy)
-        copy.close()
+        folder = Path(path).parent
+        errors = []
+        for target in (folder / "backups" / name, folder / name):
+            try:
+                target.parent.mkdir(exist_ok=True)
+                copy = sqlite3.connect(target)
+                try:
+                    raw.backup(copy)
+                finally:
+                    copy.close()
+                log.info("Database copied to %s before migrating.", target)
+                return
+            except (OSError, sqlite3.Error) as exc:
+                errors.append(f"{target}: {exc}")
+        log.warning("No backup before migrating (%s).", "; ".join(errors))
 
 
 def init_database(url: str) -> sessionmaker[Session]:
