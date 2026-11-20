@@ -170,16 +170,23 @@
     </details>
   </section>
 
-  <section class="card">
+  <section class="card" id="password">
+    {% if auth_mode == 'password' %}
     <h2>{{ icon('key', 18) }} Change password</h2>
     <p class="card-sub">Your password is also used by KOReader and OPDS.</p>
+    {% else %}
+    <h2>{{ icon('key', 18) }} Device password</h2>
+    <p class="card-sub">{% if auth_mode == 'none' %}This Bookshelf has no login page{% else %}You sign in through your proxy{% endif %}, but KOReader, OPDS and WebDAV still sign in with <strong>{{ user.username }}</strong> and a password. Set it here.</p>
+    {% endif %}
     {{ alert(password_error) }}
     {{ alert(password_notice, 'ok') }}
-    <form method="post" action="/settings/password" class="form form-narrow">
+    <form method="post" action="/settings/password#password" class="form form-narrow">
+      {% if auth_mode == 'password' %}
       <div class="field">
         <label for="current_password">Current password</label>
         <input class="input" id="current_password" name="current_password" type="password" autocomplete="current-password" required>
       </div>
+      {% endif %}
       <div class="field">
         <label for="new_password">New password</label>
         <input class="input" id="new_password" name="new_password" type="password" autocomplete="new-password" minlength="6" required>
@@ -188,10 +195,11 @@
         <label for="new_password_confirm">Repeat new password</label>
         <input class="input" id="new_password_confirm" name="new_password_confirm" type="password" autocomplete="new-password" minlength="6" required>
       </div>
-      <div><button class="btn btn-primary">Change password</button></div>
+      <div><button class="btn btn-primary">{{ 'Change password' if auth_mode == 'password' else 'Set password' }}</button></div>
     </form>
   </section>
 
+  {% if auth_mode == 'password' %}
   <section class="card card-row">
     <div>
       <h2>Log out</h2>
@@ -201,6 +209,7 @@
       <button class="btn">{{ icon('logout', 18) }} Log out</button>
     </form>
   </section>
+  {% endif %}
 </div>
 <script type="importmap">{{ reader_import_map()|tojson }}</script>
 <script type="module" src="{{ static('js/reader-layout.js') }}"></script>

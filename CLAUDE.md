@@ -19,12 +19,15 @@ docker build -t ghcr.io/deulfi/bookshelf:latest . && docker compose up -d   # lo
 
 ```
 bookshelf/
-  main.py            create_app(): wires settings, DB, storage, routers, error handlers
+  main.py            create_app(): wires settings, DB, storage, routers, error handlers;
+                     create_server() is what `serve` runs (proxy headers, keeps the peer IP)
   config.py          Settings dataclass, read from BOOKSHELF_* environment variables
   db.py              engine, Base, utcnow(), run_migrations() (Alembic runs on startup)
   models.py          User, AuthSession, Book, ReadingProgress, ReaderProfile, WebReadingTime,
                      ReadingSession (web reader sittings for the book page's session log)
-  deps.py            FastAPI dependencies + Annotated aliases (DB, CurrentUser, AdminUser, ...)
+  deps.py            FastAPI dependencies + Annotated aliases (DB, CurrentUser, AdminUser, ...);
+                     optional_user() is the one place that applies BOOKSHELF_AUTH (password,
+                     none, header) for web pages; device clients always use passwords
   storage.py         file layout under the data dir (books/<user id>/ library folders, covers/,
                      files/, tmp/, reader/); library_root(user_id) is where a user's books live
   formats.py         supported extensions -> MIME types
@@ -69,6 +72,9 @@ scripts/dev_seed.py  demo data for local development
 - **Datetimes.** Stored as naive UTC (`db.utcnow()`). KOReader timestamps are unix seconds (int).
 - **Schema changes.** Edit `models.py`, then run `alembic revision --autogenerate`, review the
   generated file in `migrations/versions/`, and commit it. Never edit an existing migration.
+  Migrations run with foreign keys off (`db.foreign_keys_off`): batch mode recreates tables
+  with `DROP TABLE`, which would otherwise cascade-delete every row that references them. An
+  existing database is copied to `<data dir>/backups/` before it is migrated.
 - **Frontend.** Server-rendered HTML first. Use htmx attributes for partial updates (see the
   library search form and `partials/library.html`) and keep `app.js` for small enhancements only.
   No build step and no frameworks. Use the CSS tokens in `:root`, and check light and dark mode

@@ -4,7 +4,7 @@ from alembic import context
 
 from bookshelf import models  # noqa: F401  (registers all tables on Base.metadata)
 from bookshelf.config import Settings
-from bookshelf.db import Base, make_engine
+from bookshelf.db import Base, foreign_keys_off, make_engine
 
 target_metadata = Base.metadata
 
@@ -25,5 +25,7 @@ if connection is not None:
 else:  # invoked from the alembic CLI
     settings = Settings.from_env()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    with make_engine(settings.database_url).begin() as cli_connection:
+    # Foreign keys off, or batch mode's DROP TABLE cascades (see db.foreign_keys_off).
+    engine = make_engine(settings.database_url)
+    with foreign_keys_off(engine) as cli_connection, cli_connection.begin():
         _run(cli_connection)

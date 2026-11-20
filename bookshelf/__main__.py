@@ -45,12 +45,12 @@ def main(argv: list[str] | None = None) -> None:
         import uvicorn
 
         uvicorn.run(
-            "bookshelf.main:create_app",
+            "bookshelf.main:create_server",
             factory=True,
             host=getattr(args, "host", "0.0.0.0"),
             port=getattr(args, "port", 8080),
             reload=getattr(args, "reload", False),
-            proxy_headers=True,
+            proxy_headers=False,  # create_server handles them (it keeps the peer address)
             server_header=False,
         )
         return

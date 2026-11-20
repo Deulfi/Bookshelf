@@ -61,6 +61,9 @@ Everything runs in one small Docker container with a single SQLite database.
   the other way round. Bars are arranged by drag and drop; themes, fonts and settings are
   configurable with JSON, and bar elements can be added as plugins (see [Web reader](#web-reader)).
 - **Multiple users.** Every user has a private library. Admins manage accounts.
+- **Your choice of sign-in.** A login page (default), no login at all for a single user at home,
+  or sign-in through your reverse proxy (Authelia, Authentik, oauth2-proxy, so also OIDC and
+  single sign-on). See [Signing in](#signing-in).
 - **Clean, responsive UI.** Works on phones, tablets and desktops, in light and dark mode.
   No build step and no JavaScript framework.
 
@@ -80,7 +83,15 @@ Open <http://localhost:8080> and create the administrator account. Adjust the po
 settings in `.env`; `docker-compose.yml` never needs local changes.
 
 To update, run `docker compose pull && docker compose up -d`. `:latest` is the newest release;
-pin a version with `image: ghcr.io/deulfi/bookshelf:0.3` (or `:0.3.0`) instead.
+pin a version with `image: ghcr.io/deulfi/bookshelf:0.3` (or `:0.3.2`) instead. Test builds are
+published as pre-releases (`:0.3.3-beta.1` and `:beta`) and never move `:latest`.
+
+Before an update changes the database, Bookshelf copies it to `/data/backups/`. Delete old copies
+there whenever you like.
+
+> **Updating from 0.3.1 or older:** the update to 0.3.1 deleted reading progress, reading time,
+> "Send to e-reader" marks and reader settings (a migration bug, fixed in 0.3.2); books came back
+> through the library scan. KOReader and Readest restore their positions on the next sync.
 
 Data (database, books, covers) is stored in the `bookshelf-data` volume, mounted at `/data`.
 If you prefer a bind mount instead, make sure the directory is writable by UID 1000.
@@ -113,10 +124,34 @@ Set these in `.env` (see [.env.example](.env.example)). All of them are optional
 | `BOOKSHELF_SECURE_COOKIES` | `false` | Set to `true` when served over HTTPS |
 | `BOOKSHELF_INGEST_DIR` | *(empty)* | Shared library folder, e.g. a NAS share (empty = one folder per user in the data dir) |
 | `BOOKSHELF_SCAN_IGNORE` | *(empty)* | File and folder names scans skip, comma-separated patterns, e.g. `@eaDir,*.tmp` |
+| `BOOKSHELF_AUTH` | `password` | Web sign-in: `password`, `none` or `header`, see [Signing in](#signing-in) |
+| `BOOKSHELF_AUTH_HEADER` | `Remote-User` | Header with the username, for `BOOKSHELF_AUTH=header` |
+| `BOOKSHELF_AUTH_PROXIES` | *(empty)* | Proxy IPs or networks allowed to send that header, e.g. `172.16.0.0/12` |
 | `TZ` | `UTC` | Time zone for reading statistics, e.g. `Europe/Berlin` |
 
 When running without Docker Compose, `BOOKSHELF_DATA_DIR` (default `./data`, `/data` in the
 image) and `BOOKSHELF_PORT` (default `8080`) control the storage location and listening port.
+
+### Signing in
+
+`BOOKSHELF_AUTH` picks how the web UI signs people in:
+
+- **`password`** (default): the login page, with accounts made on the setup page, by an
+  administrator or with the command line.
+- **`none`**: single-user mode without a login. Everyone who can reach Bookshelf uses the first
+  administrator's account (created as `admin` on first start). Only use it on a home network or
+  behind a proxy that asks for a login.
+- **`header`**: a reverse proxy signs people in (for example Authelia, Authentik or oauth2-proxy,
+  which also covers OIDC and single sign-on) and sends the username in `BOOKSHELF_AUTH_HEADER`.
+  Accounts are created on first visit; the very first one becomes an administrator. Set
+  `BOOKSHELF_AUTH_PROXIES` to the proxy's address so nobody else can send the header, and don't
+  publish Bookshelf's port past the proxy.
+
+KOReader sync, OPDS and WebDAV always sign in with a username and password, because devices
+can't use a proxy's login page. In `none` and `header` mode set that password under
+*Settings → Device password*, and let the proxy pass `/users`, `/syncs`, `/healthcheck`, `/opds`
+and `/webdav` through without its own login. Both modes refuse form posts started by other
+websites, since no login cookie protects them.
 
 ### Library folders
 

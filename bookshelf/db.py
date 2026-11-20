@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import re
+import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import Engine, create_engine, event, text
+from sqlalchemy import Connection, Engine, create_engine, event, text
 from sqlalchemy.exc import DatabaseError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -83,11 +86,63 @@ def run_migrations(engine: Engine) -> None:
     from alembic import command
     from alembic.config import Config
 
+    _backup_before_migrating(engine)
     config = Config()
     config.set_main_option("script_location", str(MIGRATIONS_DIR))
-    with engine.begin() as connection:
+    with foreign_keys_off(engine) as connection, connection.begin():
         config.attributes["connection"] = connection
         command.upgrade(config, "head")
+        _check_foreign_keys(connection)
+
+
+@contextmanager
+def foreign_keys_off(engine: Engine) -> Iterator[Connection]:
+    """A connection without foreign key enforcement, for migrations.
+
+    SQLite can't change a table's columns in place, so Alembic's batch mode copies the table and
+    runs ``DROP TABLE`` on the old one. With foreign keys on, that drop deletes every row that
+    references the table through ``ON DELETE CASCADE``: recreating ``users`` (0008) erased all
+    books, progress and reading time. The pragma only works outside a transaction, and the
+    connection gets it back before it returns to the pool."""
+    with engine.connect() as connection:
+        connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        connection.commit()
+        enforced = connection.exec_driver_sql("PRAGMA foreign_keys").scalar()
+        connection.commit()
+        if enforced != 0:
+            raise RuntimeError("Could not turn off foreign keys for the migration.")
+        try:
+            yield connection
+        finally:
+            connection.rollback()
+            connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+            connection.commit()
+
+
+def _check_foreign_keys(connection: Connection) -> None:
+    problems = connection.exec_driver_sql("PRAGMA foreign_key_check").fetchall()
+    if problems:
+        raise RuntimeError(f"The migration broke foreign keys: {problems[:5]}")
+
+
+def _backup_before_migrating(engine: Engine) -> None:
+    """Copy an existing database to ``backups/`` next to it before its schema changes."""
+    path = engine.url.database
+    if not path or path == ":memory:" or not Path(path).exists():
+        return
+    with engine.connect() as connection:
+        try:
+            version = connection.scalar(text("SELECT version_num FROM alembic_version"))
+        except DatabaseError:
+            return  # a new database: nothing to keep
+        backups = Path(path).parent / "backups"
+        backups.mkdir(exist_ok=True)
+        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+        target = backups / f"bookshelf-{version}-{stamp}.db"
+        raw = connection.connection.driver_connection
+        with sqlite3.connect(target) as copy:
+            raw.backup(copy)
+        copy.close()
 
 
 def init_database(url: str) -> sessionmaker[Session]:

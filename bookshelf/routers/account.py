@@ -32,6 +32,7 @@ def _render_settings(request: Request, db: DB, user: User, status_code: int = 20
         user=user,
         nav="settings",
         server_url=server_url,
+        auth_mode=request.app.state.settings.auth,
         opds_url=f"{server_url}/opds",
         webdav_url=f"{server_url}/webdav",
         sync_feeds=[
@@ -57,12 +58,15 @@ def change_password(
     request: Request,
     db: DB,
     user: CurrentUser,
-    current_password: Annotated[str, Form()],
     new_password: Annotated[str, Form()],
     new_password_confirm: Annotated[str, Form()],
+    current_password: Annotated[str, Form()] = "",
 ) -> Response:
     error = None
-    if users.authenticate(db, user.username, current_password) is None:
+    # Without a login page the account has no password the user knows; it's set here for
+    # devices, by whoever the web UI already trusts (single user or the proxy's sign-in).
+    needs_current = request.app.state.settings.auth == "password"
+    if needs_current and users.authenticate(db, user.username, current_password) is None:
         error = "Your current password is incorrect."
     elif new_password != new_password_confirm:
         error = "The new passwords don’t match."

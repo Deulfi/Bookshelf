@@ -8,6 +8,7 @@ login and the KOReader key.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import secrets
 import time
 
@@ -61,3 +62,22 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 def new_token() -> str:
     return secrets.token_urlsafe(32)
+
+
+def address_allowed(address: str, allowed: tuple[str, ...]) -> bool:
+    """Whether ``address`` is one of ``allowed`` (IP addresses, networks like 172.16.0.0/12,
+    or other names compared literally)."""
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return address in allowed
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    for entry in allowed:
+        try:
+            if ip in ipaddress.ip_network(entry, strict=False):
+                return True
+        except ValueError:
+            if address == entry:
+                return True
+    return False

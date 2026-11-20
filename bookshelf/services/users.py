@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import re
+import secrets
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import security
@@ -69,6 +71,39 @@ def create_user(
     user = User(username=name, password_hash=password_hash, is_admin=is_admin)
     db.add(user)
     db.commit()
+    return user
+
+
+def _random_password() -> str:
+    """For accounts made without a login form; the device password is set in the settings."""
+    return secrets.token_urlsafe(24)
+
+
+def single_user(db: Session) -> User:
+    """The account used when the web UI has no login (``BOOKSHELF_AUTH=none``): the first
+    administrator, or a new "admin" account on first start."""
+    user = db.scalar(select(User).where(User.is_admin).order_by(User.id).limit(1))
+    if user is None:
+        user = db.scalar(select(User).order_by(User.id).limit(1))
+    if user is None:
+        user = create_user(db, "admin", password=_random_password(), is_admin=True)
+    return user
+
+
+def proxy_user(db: Session, username: str) -> User:
+    """The account named by the reverse proxy (``BOOKSHELF_AUTH=header``), created on first
+    visit. The first account becomes an administrator, like the one made on the setup page."""
+    user = get_by_username(db, username)
+    if user is None:
+        try:
+            user = create_user(
+                db, username, password=_random_password(), is_admin=not has_users(db)
+            )
+        except IntegrityError:  # two first requests at once: the other one created it
+            db.rollback()
+            user = get_by_username(db, username)
+            if user is None:
+                raise
     return user
 
 

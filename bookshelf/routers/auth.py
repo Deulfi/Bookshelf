@@ -22,7 +22,9 @@ def _safe_next(target: str | None) -> str:
 
 
 @router.get("/setup")
-def setup_page(request: Request, db: DB) -> Response:
+def setup_page(request: Request, db: DB, settings: AppSettings) -> Response:
+    if settings.auth != "password":
+        return RedirectResponse("/", status_code=303)
     if users.has_users(db):
         return RedirectResponse("/login", status_code=303)
     return render(request, "setup.html")
@@ -37,6 +39,8 @@ def setup(
     password: Annotated[str, Form()],
     password_confirm: Annotated[str, Form()],
 ) -> Response:
+    if settings.auth != "password":
+        return RedirectResponse("/", status_code=303)
     if users.has_users(db):
         return RedirectResponse("/login", status_code=303)
     error = None
@@ -56,7 +60,11 @@ def setup(
 
 
 @router.get("/login")
-def login_page(request: Request, db: DB, user: OptionalUser, next: str = "/") -> Response:
+def login_page(
+    request: Request, db: DB, settings: AppSettings, user: OptionalUser, next: str = "/"
+) -> Response:
+    if settings.auth != "password":  # no login page: signed in automatically or by the proxy
+        return RedirectResponse(_safe_next(next), status_code=303)
     if not users.has_users(db):
         return RedirectResponse("/setup", status_code=303)
     if user is not None:
@@ -73,6 +81,8 @@ def login(
     password: Annotated[str, Form()],
     next: Annotated[str, Form()] = "/",
 ) -> Response:
+    if settings.auth != "password":
+        return RedirectResponse("/", status_code=303)
     user = users.authenticate(db, username, password)
     if user is None:
         return render(

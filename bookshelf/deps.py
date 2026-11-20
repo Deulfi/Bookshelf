@@ -9,6 +9,7 @@ from fastapi import Depends, HTTPException, Request, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy.orm import Session
 
+from . import security
 from .config import Settings
 from .models import User
 from .services import sessions, users
@@ -39,9 +40,42 @@ AppSettings = Annotated[Settings, Depends(get_settings)]
 AppStorage = Annotated[Storage, Depends(get_storage)]
 
 
-def optional_user(request: Request, db: DB) -> User | None:
+def optional_user(request: Request, db: DB, settings: AppSettings) -> User | None:
+    """The signed-in user of a web request, by the ``BOOKSHELF_AUTH`` mode."""
+    if settings.auth == "none":
+        return users.single_user(db)
+    if settings.auth == "header":
+        return _proxy_user(request, db, settings)
     token = request.cookies.get(SESSION_COOKIE)
     return sessions.user_for_token(db, token) if token else None
+
+
+PEER_KEY = "bookshelf.peer"
+
+
+def peer_address(request: Request) -> str:
+    """The address of the connection itself. ``X-Forwarded-For`` replaces ``request.client``
+    behind a proxy, so ``python -m bookshelf serve`` keeps the original (``main.KeepPeer``)."""
+    peer = request.scope.get(PEER_KEY)
+    if peer is None and request.client is not None:
+        peer = request.client.host
+    return peer or ""
+
+
+def _proxy_user(request: Request, db: Session, settings: Settings) -> User | None:
+    username = request.headers.get(settings.auth_header, "").strip()
+    if not username:
+        return None
+    if not security.address_allowed(peer_address(request), settings.auth_proxies):
+        raise HTTPException(
+            status_code=403,
+            detail=f"The {settings.auth_header} header came from an address that "
+            "BOOKSHELF_AUTH_PROXIES does not list.",
+        )
+    try:
+        return users.proxy_user(db, username)
+    except users.UserError as exc:
+        raise HTTPException(status_code=403, detail=f"Can’t use “{username}”: {exc}") from exc
 
 
 OptionalUser = Annotated[User | None, Depends(optional_user)]

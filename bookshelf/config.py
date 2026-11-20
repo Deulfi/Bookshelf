@@ -25,6 +25,9 @@ def _env_list(name: str) -> tuple[str, ...]:
     return tuple(item.strip() for item in os.environ.get(name, "").split(",") if item.strip())
 
 
+AUTH_MODES = ("password", "none", "header")
+
+
 @dataclass(frozen=True)
 class Settings:
     data_dir: Path = Path("./data")
@@ -40,10 +43,29 @@ class Settings:
     ingest_dir: Path | None = None
     # Extra names (fnmatch patterns) that library scans skip; names starting with "." always are.
     scan_ignore: tuple[str, ...] = ()
+    # How the web UI signs people in: "password" (login page), "none" (single user, no login)
+    # or "header" (a reverse proxy sends the username in ``auth_header``). Device clients
+    # (KOReader sync, OPDS, WebDAV) always use the account password.
+    auth: str = "password"
+    auth_header: str = "Remote-User"
+    # IP addresses or networks of the proxies allowed to send ``auth_header`` (header mode).
+    auth_proxies: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.auth not in AUTH_MODES:
+            raise ValueError(f"BOOKSHELF_AUTH must be one of {', '.join(AUTH_MODES)}.")
+        if self.auth == "header" and not self.auth_proxies:
+            raise ValueError(
+                "BOOKSHELF_AUTH=header needs BOOKSHELF_AUTH_PROXIES: the IP addresses or "
+                "networks of the proxies that may send the username header."
+            )
 
     @classmethod
     def from_env(cls) -> Settings:
         return cls(
+            auth=os.environ.get("BOOKSHELF_AUTH", "password").strip().lower() or "password",
+            auth_header=os.environ.get("BOOKSHELF_AUTH_HEADER", "").strip() or "Remote-User",
+            auth_proxies=_env_list("BOOKSHELF_AUTH_PROXIES"),
             data_dir=Path(os.environ.get("BOOKSHELF_DATA_DIR", "./data")),
             allow_registration=_env_bool("BOOKSHELF_ALLOW_REGISTRATION", False),
             max_upload_mb=int(os.environ.get("BOOKSHELF_MAX_UPLOAD_MB", "200")),
