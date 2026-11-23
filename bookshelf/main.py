@@ -18,7 +18,18 @@ from . import __version__
 from .config import Settings
 from .db import init_database
 from .deps import PEER_KEY, LoginRequired
-from .routers import account, admin, auth, kosync, library, opds, reader, stats, webdav
+from .routers import (
+    account,
+    admin,
+    auth,
+    bookorbit,
+    kosync,
+    library,
+    opds,
+    reader,
+    stats,
+    webdav,
+)
 from .services.scanner import LibraryScanner
 from .storage import Storage
 from .templating import render
@@ -88,7 +99,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     static = VersionedStaticFiles(directory=STATIC_DIR)
     app.mount("/static", GZipMiddleware(static, minimum_size=1024), name="static")
-    for module in (auth, library, reader, stats, account, admin, kosync, opds, webdav):
+    for module in (auth, library, reader, stats, account, admin, kosync, bookorbit, opds, webdav):
         app.include_router(module.router)
 
     app.add_exception_handler(kosync.KosyncError, kosync.kosync_error_handler)

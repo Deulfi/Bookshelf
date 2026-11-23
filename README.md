@@ -54,7 +54,8 @@ Everything runs in one small Docker container with a single SQLite database.
   selection ("Send to e-reader") in sync on the device automatically.
 - **Reading statistics.** Total reading time, streaks, a reading calendar, time per book and an
   estimate of the time left. Time in the web reader is counted automatically; KOReader's statistics
-  are added when you sync them via the built-in WebDAV server.
+  are added when you sync them via the built-in WebDAV server, and Readest's through its BookOrbit
+  integration.
 - **Read in the browser.** EPUB, MOBI, AZW3, FB2 and CBZ open in a built-in reader (foliate-js)
   with scroll or page mode, auto-hiding bars, themes and font settings. In scroll mode it moves on
   to the next chapter when you keep scrolling. It continues where KOReader or Readest stopped, and
@@ -199,6 +200,14 @@ Bookshelf username and password. Keep the default document matching (*Binary*).
 **Readest and other apps.** Apps that support KOReader's progress sync use the same address and
 login; in Readest, look for *KOReader Sync* in a book's menu. Positions are shared with the
 [web reader](#web-reader) too.
+
+**Readest reading time.** Readest sends its reading statistics through its *BookOrbit*
+integration, and Bookshelf understands that part of BookOrbit's API. Keep *KOReader Sync* for
+positions and add the BookOrbit integration next to it (in Readest's integration settings) with
+your Bookshelf address (no path, for example `http://192.168.1.10:8080`), username and password.
+Switch on only *Sync stats*: Bookshelf has no BookOrbit highlight, bookmark or reading-status sync,
+and *Sync progress* there would only send each position twice. Readest's time then appears in the
+statistics and in a book's session log, under the device name you gave Readest.
 
 **OPDS catalog.** In the file browser, open *Search → OPDS catalog*, tap **+** and add
 `http://<your-server>:8080/opds` with your Bookshelf username and password.

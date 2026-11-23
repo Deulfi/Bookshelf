@@ -113,7 +113,7 @@ class ReaderProfile(Base):
 
 
 class WebReadingTime(Base):
-    """Seconds read in the browser reader, per book and hour. Merged with KOReader's
+    """Seconds read in the browser reader or Readest, per book and hour. Merged with KOReader's
     ``statistics.sqlite3`` on the stats pages (see ``services/reading_stats.py``)."""
 
     __tablename__ = "web_reading_time"
@@ -129,8 +129,9 @@ class WebReadingTime(Base):
 
 
 class ReadingSession(Base):
-    """One sitting in the browser reader (pauses under ``reading_stats.SESSION_GAP`` continue
-    it), for the book page's session log. KOReader's sessions come from its statistics file."""
+    """One sitting in the browser reader or in Readest (pauses under ``reading_stats.SESSION_GAP``
+    continue it), for the book page's session log. KOReader's sessions come from its statistics
+    file."""
 
     __tablename__ = "reading_sessions"
     __table_args__ = (Index("ix_reading_sessions_book", "user_id", "document", "ended_at"),)
@@ -147,6 +148,23 @@ class ReadingSession(Base):
     end_fraction: Mapped[float] = mapped_column(default=0.0)
     # Where the session ended (XPointer or CFI, as in ReadingProgress), to resume there.
     end_position: Mapped[str] = mapped_column(Text, default="")
+
+
+class PageStatEvent(Base):
+    """One page view pushed by another app (Readest's BookOrbit integration), like a row of
+    KOReader's ``page_stat_data``. Kept so a re-sent event is not counted twice; its time is
+    added to ``WebReadingTime`` and ``ReadingSession`` when it first arrives."""
+
+    __tablename__ = "page_stat_events"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    document: Mapped[str] = mapped_column(String(32), primary_key=True)  # partial MD5
+    start_time: Mapped[int] = mapped_column(primary_key=True)  # unix seconds
+    page: Mapped[int] = mapped_column(primary_key=True)
+    duration: Mapped[int] = mapped_column(default=0)
+    total_pages: Mapped[int] = mapped_column(default=0)
 
 
 class ReadingProgress(Base):

@@ -7,6 +7,10 @@ the same partial MD5 that Bookshelf stores as ``Book.partial_md5``.
 The browser reader reports its reading time with each position update; it is stored per book
 and hour in ``WebReadingTime`` and added to KOReader's numbers here. The web reader has no
 stable pages, so page counts (and the time-left estimate) come from KOReader only.
+
+Readest pushes its reading time as page views (``add_page_events``, through the BookOrbit
+compatible routes in ``routers/bookorbit.py``); they are counted the same way as the web
+reader's time.
 """
 
 from __future__ import annotations
@@ -25,7 +29,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..models import Book, ReadingSession, WebReadingTime
+from ..models import Book, PageStatEvent, ReadingSession, WebReadingTime
 from ..storage import Storage
 
 log = logging.getLogger(__name__)
@@ -177,6 +181,119 @@ def add_web_time(
             )
         )
     db.commit()
+
+
+@dataclass(frozen=True)
+class PageEvent:
+    """One page view from another app: KOReader's ``page_stat_data`` columns."""
+
+    start_time: int  # unix seconds
+    page: int
+    duration: int  # seconds
+    total_pages: int
+
+
+def add_page_events(
+    db: Session,
+    user_id: int,
+    document: str,
+    events: list[PageEvent],
+    *,
+    device: str,
+    device_id: str = "",
+) -> int:
+    """Add page views pushed by another app (Readest's BookOrbit integration) to the hour
+    buckets and to that device's sessions, like the web reader's time. Events already received
+    are skipped (apps re-send a batch whose upload failed halfway), so are events without a
+    time, a duration or a page count. Returns how many were new."""
+    events = sorted(
+        (e for e in events if e.start_time > 0 and e.duration > 0 and e.total_pages > 0),
+        key=lambda e: e.start_time,
+    )
+    if not events or not document:
+        return 0
+    seen = {
+        (start, page)
+        for start, page in db.execute(
+            select(PageStatEvent.start_time, PageStatEvent.page).where(
+                PageStatEvent.user_id == user_id,
+                PageStatEvent.document == document,
+                PageStatEvent.start_time.between(events[0].start_time, events[-1].start_time),
+            )
+        )
+    }
+
+    def near(session: ReadingSession | None, start: int, end: int) -> bool:
+        return (
+            session is not None
+            and start - session.ended_at <= SESSION_GAP
+            and session.started_at - end <= SESSION_GAP
+        )
+
+    session: ReadingSession | None = None
+    added = 0
+    for event in events:
+        if (event.start_time, event.page) in seen:
+            continue
+        seen.add((event.start_time, event.page))
+        seconds = min(event.duration, MAX_WEB_SECONDS)
+        start, end = event.start_time, event.start_time + seconds
+        db.add(
+            PageStatEvent(
+                user_id=user_id,
+                document=document,
+                start_time=start,
+                page=event.page,
+                duration=seconds,
+                total_pages=event.total_pages,
+            )
+        )
+        key = (user_id, document, start - start % 3600)
+        bucket = db.get(WebReadingTime, key)
+        if bucket is None:
+            bucket = WebReadingTime(user_id=user_id, document=document, hour=key[2], seconds=0)
+            db.add(bucket)
+        bucket.seconds += seconds
+        bucket.last_read = max(bucket.last_read or 0, end)
+
+        fraction = min(event.page / event.total_pages, 1.0)
+        if not near(session, start, end):
+            # The sitting this page belongs to (pages can arrive late, after newer ones).
+            db.flush()
+            session = db.scalars(
+                select(ReadingSession)
+                .where(
+                    ReadingSession.user_id == user_id,
+                    ReadingSession.document == document,
+                    ReadingSession.device_id == device_id,
+                    ReadingSession.ended_at >= start - SESSION_GAP,
+                    ReadingSession.started_at <= end + SESSION_GAP,
+                )
+                .order_by(ReadingSession.ended_at.desc())
+                .limit(1)
+            ).first()
+        if near(session, start, end):
+            session.seconds += seconds
+            session.started_at = min(session.started_at, start)
+            if end >= session.ended_at:
+                session.ended_at = end
+                session.end_fraction = fraction
+        else:
+            session = ReadingSession(
+                user_id=user_id,
+                document=document,
+                device=device[:200],
+                device_id=device_id[:200],
+                started_at=start,
+                ended_at=end,
+                seconds=seconds,
+                start_fraction=fraction,
+                end_fraction=fraction,
+            )
+            db.add(session)
+        added += 1
+    db.commit()
+    return added
 
 
 def delete_web_session(db: Session, user_id: int, document: str, session_id: int) -> bool:

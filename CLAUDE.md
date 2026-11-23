@@ -24,7 +24,8 @@ bookshelf/
   config.py          Settings dataclass, read from BOOKSHELF_* environment variables
   db.py              engine, Base, utcnow(), run_migrations() (Alembic runs on startup)
   models.py          User, AuthSession, Book, ReadingProgress, ReaderProfile, WebReadingTime,
-                     ReadingSession (web reader sittings for the book page's session log)
+                     ReadingSession (web reader and Readest sittings for the book page's
+                     session log), PageStatEvent (Readest page views, kept for dedupe)
   deps.py            FastAPI dependencies + Annotated aliases (DB, CurrentUser, AdminUser, ...);
                      optional_user() is the one place that applies BOOKSHELF_AUTH (password,
                      none, header) for web pages; device clients always use passwords
@@ -35,7 +36,7 @@ bookshelf/
   templating.py      Jinja env, filters, globals, render() helper; UI label dicts
   icons.py           inline SVG icon set used via {{ icon("name") }}
   routers/           thin HTTP layer: auth, library, reader, stats, account, admin, kosync,
-                     opds, webdav
+                     bookorbit (Readest's stats push), opds, webdav
   services/          business logic, no HTTP: library, users, sessions (logins), progress (sync
                      record, manual progress), scanner (library folder scans), covers,
                      hashing, files (WebDAV store), reading_stats (KOReader + web reader stats),
@@ -110,6 +111,11 @@ scripts/dev_seed.py  demo data for local development
 - **WebDAV** (`routers/webdav.py`): KOReader's cloud storage parses PROPFIND responses with Lua
   patterns (`<…response…>`, `<…href…>`, `<…collection…>`) and syncs with GET + ETag, then PUT with
   `If-Match` (412 on mismatch). Keep hrefs as absolute paths and keep the store flat.
+- **BookOrbit API subset** (`routers/bookorbit.py`): Readest's BookOrbit integration calls
+  `/api/v1/koreader/users/auth`, `plugin/match-check` and `plugin/page-stats` with KOSync headers.
+  Keep the camelCase JSON shapes, answer every well-formed hash as matched (otherwise Readest
+  warns on every book) and keep page events idempotent: Readest re-sends a chunk after a failure.
+  Unknown `plugin/` routes must stay 404, which Readest reads as "feature not supported".
 - **Reading statistics** (`services/reading_stats.py`): KOReader owns `statistics.sqlite3`
   (tables `book`, `page_stat_data`). Open it read-only, never modify it, and match books via
   `book.md5` = `Book.partial_md5`. The web reader's time is stored separately (`WebReadingTime`,
