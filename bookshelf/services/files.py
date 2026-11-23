@@ -1,8 +1,9 @@
 """A small per-user file store that backs the WebDAV endpoint.
 
 KOReader's cloud sync (e.g. for reading statistics) downloads a file, merges it on the device
-and uploads it again with ``If-Match: <etag>``. The store therefore provides stable ETags and
-atomic, precondition-checked replacement. It is deliberately flat: no sub-folders.
+and uploads it again with ``If-Match: <etag>``. The store therefore provides stable ETags that
+change with every upload and atomic, precondition-checked replacement. It is deliberately flat:
+no sub-folders.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ class StoredFile:
     path: Path
     size: int
     modified: datetime  # timezone-aware UTC
+    mtime_ns: int
     etag: str
 
 
@@ -59,6 +61,7 @@ class FileStore:
             path=path,
             size=stat.st_size,
             modified=datetime.fromtimestamp(stat.st_mtime, UTC),
+            mtime_ns=stat.st_mtime_ns,
             etag=f'"{stat.st_mtime_ns:x}-{stat.st_size:x}"',
         )
 
@@ -81,7 +84,10 @@ class FileStore:
             raise PreconditionFailed
         if if_none_match is not None and _etag_matches(if_none_match, current):
             raise PreconditionFailed
-        os.replace(temp_path, self.directory / name)
+        path = self.directory / name
+        os.replace(temp_path, path)
+        if current is not None:
+            _advance_mtime(path, current)
         return current is None
 
     def delete(self, name: str) -> bool:
@@ -90,6 +96,19 @@ class FileStore:
             return False
         current.path.unlink(missing_ok=True)
         return True
+
+
+def _advance_mtime(path: Path, previous: StoredFile) -> None:
+    """Make sure a replaced file gets a new ETag. File times only advance every few
+    milliseconds (Linux) or more (Windows), so two uploads of the same size in a row could keep
+    the old ETag, and a device holding the old version would pass ``If-Match`` and overwrite
+    the newer one. Move the modification time past the old one in that case, in steps that
+    survive coarser filesystem time resolutions."""
+    for step in (1_000, 1_000_000, 1_000_000_000, 2_000_000_000):
+        stat = path.stat()
+        if stat.st_size != previous.size or stat.st_mtime_ns > previous.mtime_ns:
+            return
+        os.utime(path, ns=(stat.st_atime_ns, previous.mtime_ns + step))
 
 
 def _etag_matches(header: str, current: StoredFile | None) -> bool:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from xml.etree import ElementTree as ET
 
@@ -45,6 +46,23 @@ def test_koreader_sync_cycle(admin_client: TestClient) -> None:
     )
     assert weak.status_code == 204
     assert admin_client.get(URL, auth=ADMIN).content == b"version 3"
+
+
+def test_replacing_within_one_clock_tick_changes_the_etag(tmp_path) -> None:
+    from bookshelf.services.files import FileStore
+
+    store = FileStore(tmp_path)
+    for content in (b"version 1", b"version 2", b"version 3"):
+        old = store.get("stats.sqlite3")
+        temp = store.new_temp_path()
+        temp.write_bytes(content)
+        if old is not None:  # same size and the same file time, as within one clock tick
+            mtime = old.path.stat().st_mtime_ns
+            os.utime(temp, ns=(mtime, mtime))
+        store.commit(temp, "stats.sqlite3")
+        new = store.get("stats.sqlite3")
+        assert old is None or new.etag != old.etag
+    assert new.path.read_bytes() == b"version 3"
 
 
 def test_propfind_listing(admin_client: TestClient) -> None:
