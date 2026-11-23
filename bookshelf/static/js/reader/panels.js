@@ -342,6 +342,28 @@ const controls = {
         select.addEventListener('change', () => set(options[Number(select.value)].value))
         return { el: select, update(v) { select.value = String(indexOf(v)) } }
     },
+    // page mode tap areas: a dropdown of the patterns (built in and files in the data
+    // directory) and a button that shows the chosen one over the page until you click
+    tappattern(control, value, set, config, { onTapPreview }) {
+        const wrap = document.createElement('div')
+        wrap.className = 'rp-tappattern'
+        const select = document.createElement('select')
+        select.id = `rp-${control.key}`
+        select.className = 'input'
+        const patterns = config.tapPatterns ?? []
+        for (const pattern of patterns) select.append(new Option(pattern.id, pattern.id))
+        const pick = v => { select.value = patterns.some(p => p.id === v) ? v : (patterns[0]?.id ?? '') }
+        pick(value)
+        select.addEventListener('change', () => set(select.value))
+        const preview = document.createElement('button')
+        preview.type = 'button'
+        preview.className = 'btn'
+        preview.textContent = 'Preview'
+        preview.title = 'Show these areas on the page; click anywhere to close the preview'
+        preview.addEventListener('click', () => onTapPreview?.(select.value))
+        wrap.append(select, preview)
+        return { el: wrap, update: pick }
+    },
     segmented(control, value, set, config) {
         const group = document.createElement('div')
         group.className = 'rp-segmented'
@@ -418,7 +440,7 @@ function stepButton(text, label) {
     return b
 }
 
-export function buildSettings(container, config, prefs, { onArrangeBars } = {}) {
+export function buildSettings(container, config, prefs, { onArrangeBars, onTapPreview } = {}) {
     const updaters = new Map()
     container.replaceChildren()
     for (const section of config.settings?.sections ?? []) {
@@ -436,7 +458,7 @@ export function buildSettings(container, config, prefs, { onArrangeBars } = {}) 
                 continue
             }
             const set = value => prefs.set(control.key, value)
-            const built = factory(control, prefs.get(control.key), set, config)
+            const built = factory(control, prefs.get(control.key), set, config, { onTapPreview })
             const row = document.createElement('div')
             row.className = built.inline ? 'rp-row rp-row-inline' : 'rp-row'
             if (control.type !== 'themes') {
@@ -448,6 +470,14 @@ export function buildSettings(container, config, prefs, { onArrangeBars } = {}) 
             row.append(built.el)
             group.append(row)
             updaters.set(control.key, built.update)
+            // "showWhen": {"flow": "scrolled"} shows the control only while that preference has
+            // that value (e.g. chapter auto-advance exists only in scroll mode)
+            const when = Object.entries(control.showWhen ?? {})
+            if (when.length) {
+                const sync = () => { row.hidden = !when.every(([key, value]) => prefs.get(key) === value) }
+                sync()
+                prefs.addEventListener('change', sync)
+            }
         }
         container.append(group)
     }

@@ -72,6 +72,8 @@ export const chapterProgress = {
     },
 }
 
+const FRONT_MATTER = /^(?:cover|(?:half[- ]|full[- ])?title(?: page)?|copyright|table of contents|contents|dedication|epigraph|acknowledge?ments?|about (?:the|this) (?:author|book)|also by|praise|newsletter|maps?|characters|dramatis personae|front matter|colophon|credits)\b/i
+
 // "Chapter 812 / 2431". Counts table-of-contents entries when the book has them (web novels
 // usually do), otherwise the sections of the book file.
 export const chapterCounter = {
@@ -85,6 +87,10 @@ export const chapterCounter = {
                 { value: 'toc', label: 'Table of contents entries' },
                 { value: 'section', label: 'Sections of the book file' },
             ],
+        },
+        {
+            key: 'skipFront', type: 'toggle', default: false,
+            label: 'Skip front matter (cover, contents, copyright… before chapter 1)',
         },
         { key: 'format', type: 'text', label: 'Text', default: 'Chapter {current} / {total}' },
     ],
@@ -100,6 +106,12 @@ export const chapterCounter = {
         walk(ctx.engine.toc)
         const byHref = new Map(flat.map((item, i) => [item.href, i]))
         const useToc = o.source !== 'section' && flat.length > 0
+        // Leading entries that are front matter by name are not counted (the book page's
+        // "Chapter x of y" still counts every entry).
+        let skip = 0
+        if (useToc && o.skipFront) {
+            while (skip < flat.length - 1 && FRONT_MATTER.test((flat[skip].label ?? '').trim())) skip++
+        }
         return {
             el,
             update(location) {
@@ -107,8 +119,8 @@ export const chapterCounter = {
                 let total = location.sectionCount
                 if (useToc) {
                     const index = byHref.get(location.tocItem?.href)
-                    current = index === undefined ? '–' : index + 1
-                    total = flat.length
+                    current = index === undefined || index < skip ? '–' : index + 1 - skip
+                    total = flat.length - skip
                 }
                 el.textContent = ctx.ui.fill(o.format, { current, total })
             },

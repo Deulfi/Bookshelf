@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from bookshelf.config import Settings
 from bookshelf.services import reader_config
 from bookshelf.services.reader_config import ReaderConfigError, deep_merge
+from bookshelf.storage import Storage
 from tests.conftest import make_chapter_epub, upload
 
 
@@ -390,3 +391,33 @@ def test_bar_editor_panel_and_icons(admin_client: TestClient) -> None:
     settings = admin_client.get("/settings").text
     assert 'id="reader-icons"' in settings and 'data-icon="layout"' in settings
     assert '"/static/js/reader/layout-editor.js"' in settings  # import map entry
+
+
+# ---------- server-wide defaults (admins) ----------
+
+
+def test_admin_saves_server_layout_and_json(admin_client: TestClient, settings: Settings) -> None:
+    layout = {"top": ["exit"], "bottom": []}
+    response = admin_client.post("/settings/reader/server/layout", json={"layout": layout})
+    assert response.status_code == 200
+    assert json.loads((settings.data_dir / "reader" / "layout.json").read_text()) == layout
+
+    config = reader_config.server_config_text(Storage(settings.data_dir))
+    assert json.loads(config) == {"layout": layout}
+    themes = '{"themes": [{"id": "night", "label": "Night", "bg": "#000", "fg": "#fff"}]}'
+    assert admin_client.post("/settings/reader/server", data={"config": themes}).status_code == 200
+    assert not (settings.data_dir / "reader" / "layout.json").exists()  # replaced as a whole
+    assert (settings.data_dir / "reader" / "themes.json").exists()
+
+    bad = admin_client.post("/settings/reader/server", data={"config": "{nope"})
+    assert bad.status_code == 422 and "Invalid JSON" in bad.text
+    admin_client.post("/settings/reader/server", data={"action": "reset"})
+    assert not (settings.data_dir / "reader" / "themes.json").exists()
+
+
+def test_server_defaults_are_admin_only(admin_client: TestClient) -> None:
+    login_as_bob(admin_client)
+    assert admin_client.post("/settings/reader/server", data={"config": "{}"}).status_code == 403
+    response = admin_client.post("/settings/reader/server/layout", json={"layout": None})
+    assert response.status_code == 403
+    assert "Web reader: server-wide defaults" not in admin_client.get("/settings").text

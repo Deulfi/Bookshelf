@@ -4,6 +4,7 @@ import { Engine } from './engine.js'
 import { Prefs } from './prefs.js'
 import { Position } from './position.js'
 import { Bars } from './bars.js'
+import { TapMap, drawPreview, findPattern } from './tap-pattern.js'
 import { loadPlugins } from './elements/index.js'
 import { Panels, buildTOC, buildSearch, buildSettings } from './panels.js'
 import { ChapterFlow } from './chapter-flow.js'
@@ -14,6 +15,7 @@ import {
 
 const boot = JSON.parse(document.getElementById('reader-bootstrap').textContent)
 const { book, config } = boot
+config.tapPatterns = boot.tapPatterns ?? [] // page mode tap grids, see services/tap_patterns.py
 
 const iconTemplates = new Map([...document.getElementById('reader-icons').content.children]
     .map(el => [el.dataset.icon, el.firstElementChild]))
@@ -41,6 +43,8 @@ function applyAppearance() {
 }
 prefs.addEventListener('change', ({ detail }) => {
     applyAppearance()
+    if (detail.keys.includes('flow') && prefs.get('flow') === 'paginated')
+        showTapPattern(prefs.get('tapPattern'), 3000)
     if (detail.keys.includes('autoAdvance')) chapterFlow?.setEnabled(prefs.get('autoAdvance', true))
 })
 onSystemThemeChange(() => {
@@ -68,6 +72,7 @@ bars = new Bars(ctx, config.layout ?? {})
 const toc = buildTOC(panels.get('toc').querySelector('.panel-body'), engine, () => panels.close())
 buildSettings(panels.get('settings').querySelector('.panel-body'), config, prefs, {
     onArrangeBars: () => panels.show('bars'),
+    onTapPreview: holdTapPattern,
 })
 buildSearch(panels.get('search').querySelector('.panel-body'), engine)
 // ---------- bar editor (a window between the bars; edits show on the real bars) ----------
@@ -82,6 +87,7 @@ panels.addEventListener('open', ({ detail }) => {
 panels.addEventListener('closed', async ({ detail }) => {
     if (detail.name !== 'bars' || !barEditor) return
     showTapZone(null)
+    chapterFlow?.demoDistance(null)
     const editor = await barEditor
     if (!editor?.dirty) return
     // closed without saving: back to the saved bars, and a fresh editor next time
@@ -96,6 +102,32 @@ function showTapZone(fraction) {
     if (fraction !== null) tapGuide.style.setProperty('--zone', String(fraction))
 }
 
+// The tap pattern preview: the grid of a pattern drawn over the page, while its dropdown in
+// the settings has focus and for a moment when page mode is switched on.
+const tapPreview = document.getElementById('tap-preview')
+let tapFlash = null
+function showTapPattern(id, forMs = 0) {
+    clearTimeout(tapFlash)
+    if (id === null) { tapPreview.hidden = true; return }
+    const map = new TapMap(findPattern(config, id)?.rows)
+    drawPreview(tapPreview, map)
+    tapPreview.hidden = false
+    if (forMs) tapFlash = setTimeout(() => { tapPreview.hidden = true }, forMs)
+}
+
+/** The settings' Preview button: the settings step aside and the areas stay until a click. */
+function holdTapPattern(id) {
+    showTapPattern(id)
+    document.body.classList.add('tap-peek')
+    tapPreview.classList.add('is-held')
+}
+function endTapPreview() {
+    showTapPattern(null)
+    document.body.classList.remove('tap-peek')
+    tapPreview.classList.remove('is-held')
+}
+tapPreview.addEventListener('click', endTapPreview)
+
 async function openBarEditor(panel) {
     const { mountLayoutEditor } = await import('./layout-editor.js')
     return mountLayoutEditor(panel.querySelector('.panel-body'), {
@@ -103,6 +135,7 @@ async function openBarEditor(panel) {
         toolbar: panel.querySelector('.panel-head'),
         onChange: layout => bars.rebuild(layout, engine.location),
         onTapZone: showTapZone,
+        onScrollDistance: px => chapterFlow?.demoDistance(px),
         onSaved: layout => {
             config.layout = layout
             bars.rebuild(layout, engine.location)
@@ -110,7 +143,7 @@ async function openBarEditor(panel) {
         },
     })
 }
-panels.addEventListener('close', () => bars.show())
+panels.addEventListener('close', () => { bars.show(); endTapPreview() })
 
 chapterFlow = new ChapterFlow(engine, {
     enabled: prefs.get('autoAdvance', true),

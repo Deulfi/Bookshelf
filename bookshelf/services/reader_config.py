@@ -208,6 +208,43 @@ def load_server_overrides(storage: Storage) -> dict[str, Any]:
     return overrides
 
 
+def server_config_text(storage: Storage) -> str:
+    """The server-wide files as one JSON object (``{"layout": ..., "themes": ...}``); "" when
+    there are none. This is what the admin's JSON editor shows."""
+    data: dict[str, Any] = {}
+    for part in PARTS:
+        try:
+            data[part] = json.loads((storage.reader_dir / f"{part}.json").read_text("utf-8"))
+        except (OSError, ValueError):
+            continue
+    return json.dumps(data, indent=2, ensure_ascii=False) + "\n" if data else ""
+
+
+def _write_server_part(storage: Storage, part: str, value: Any) -> None:
+    path = storage.reader_dir / f"{part}.json"
+    if value is None:
+        path.unlink(missing_ok=True)
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_suffix(".json.tmp")
+    temp.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    temp.replace(path)
+
+
+def save_server_config(storage: Storage, text: str) -> None:
+    """Replace the server-wide files (layout.json, settings.json, themes.json) for everyone."""
+    data = parse_override(text)  # raises ReaderConfigError
+    for part in PARTS:
+        _write_server_part(storage, part, data.get(part))
+
+
+def save_server_layout(storage: Storage, layout: dict[str, Any] | None) -> None:
+    """Set (or with None remove) the server-wide ``layout.json``, the default bars."""
+    if layout is not None:
+        validate_override({"layout": layout})
+    _write_server_part(storage, "layout", layout)
+
+
 def _profile(db: Session, user: User) -> ReaderProfile | None:
     return db.get(ReaderProfile, user.id)
 

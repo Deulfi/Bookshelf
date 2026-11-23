@@ -170,6 +170,32 @@
     </details>
   </section>
 
+  {% if user.is_admin %}
+  <section class="card" id="server-reader">
+    <h2>{{ icon('book', 18) }} Web reader: server-wide defaults</h2>
+    <p class="card-sub">Defaults for every user of this server (bars, themes, fonts, text settings). Everyone can still override them with their own configuration above.</p>
+    {{ alert(server_error) }}
+    {% if request.query_params.get('server') == 'saved' and not server_error %}{{ alert('Server-wide reader defaults saved.', 'ok') }}{% endif %}
+    <div class="layout-editor" id="server-layout-editor" data-elements-url="/api/reader/layout?scope=server" data-save-url="/settings/reader/server/layout">
+      <p class="muted small">Loading the bar editor…</p>
+    </div>
+    <details class="howto advanced"{% if server_error %} open{% endif %}>
+      <summary>Advanced: edit the server-wide configuration as JSON</summary>
+      <p class="small muted">One object with <code>layout</code>, <code>settings</code> and <code>themes</code>; each part is saved as its own file (<code>layout.json</code>, <code>settings.json</code>, <code>themes.json</code>) in <code>{{ server_config_dir }}</code> in the data directory, so you can also edit those by hand. They are merged on top of the <a class="link" href="/settings/reader/defaults" target="_blank">built-in defaults</a>, with the same rules as your own overrides. Fonts and bar element plugins are files in <code>{{ server_config_dir }}/fonts</code> and <code>/plugins</code>.</p>
+      <form method="post" action="/settings/reader/server#server-reader" class="form">
+        <div class="field">
+          <label for="server-config">Server-wide overrides</label>
+          <textarea class="input mono" id="server-config" name="config" rows="12" spellcheck="false">{{ server_config_text }}</textarea>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" name="action" value="save">Save JSON</button>
+          <button class="btn" name="action" value="reset" formnovalidate>Reset to built-in defaults</button>
+        </div>
+      </form>
+    </details>
+  </section>
+  {% endif %}
+
   <section class="card" id="password">
     {% if auth_mode == 'password' %}
     <h2>{{ icon('key', 18) }} Change password</h2>

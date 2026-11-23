@@ -260,6 +260,23 @@ them to reorder, or use the arrow buttons (handy on a phone). The gear on an ele
 options, for example the text of the chapter counter. *Behaviour* sets how the bars hide and how
 far to scroll past a chapter end. The same editor is in the reader itself (*Reader settings →
 Arrange the bars*, or the *Bar editor* element), and saving there changes the bars right away.
+While the *Scroll distance* field has focus, scrolling fills a meter that shows how far that is. Administrators
+get a second editor, *Web reader: server-wide defaults*, for the bars, themes and fonts everyone starts from.
+**Tap areas (page mode).** *Reader settings → Tap areas* picks which part of the screen turns pages
+or shows the bars; the *Preview* button next to it shows the areas over the page (the settings step aside) until you
+click, and they show briefly when you switch to page mode. Patterns are small text grids that are stretched over the screen: one
+line per row, one character per column, `L` previous page, `R` next page. Empty space (a space
+or a `.`, which editors show) shows or hides the bars; `T` does the same explicitly. Add your own as files in `<data dir>/reader/taps/`; the file name
+(without extension) is the pattern's name. More rows and columns give finer control:
+
+```
+LL  RR
+LL  RR
+LL  RR
+```
+
+Keep some empty space in a pattern, or the bars can't be reached in page mode. Built in: Thirds, Kindle,
+Edges, Halves, L-shape and Fine grid.
 
 For web novels with thousands of chapters, the default bottom bar has a **chapter progress bar**:
 it only moves within the current chapter, so a slip never jumps hundreds of chapters. The book-wide
@@ -361,7 +378,9 @@ BOOKSHELF_DATA_DIR=./data-dev .venv/bin/python -m bookshelf serve --port 8765 --
 .venv/bin/ruff check . && .venv/bin/ruff format .
 ```
 
-See [CLAUDE.md](CLAUDE.md) for the architecture and contribution conventions.
+See [CLAUDE.md](CLAUDE.md) for the architecture and contribution conventions, and
+[docs/tuning.md](docs/tuning.md) for tuning knobs (CSS tokens, chapter auto-advance numbers,
+reader files).
 
 To regenerate the screenshots in `docs/screenshots/`, see `scripts/screenshots.py`
 (uses Playwright with demo data from `scripts/dev_seed.py`).

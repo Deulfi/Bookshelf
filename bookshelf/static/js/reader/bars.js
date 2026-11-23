@@ -1,6 +1,16 @@
 // Top and bottom bars built from config.layout, with auto-hide and tap zones.
 import { layoutItems, warn } from './config.js'
 import { create } from './elements/index.js'
+import { TapMap, findPattern } from './tap-pattern.js'
+
+// What a letter in a tap pattern does in page mode. New letters (a settings corner, jumping a
+// chapter) are added here; the pattern files and the preview need no change.
+const ACTIONS = {
+    L: (bars, ctx) => ctx.engine.prev(),
+    R: (bars, ctx) => ctx.engine.next(),
+    T: bars => bars.toggle(),
+    ' ': bars => bars.toggle(), // empty space: the way to the bars in page mode
+}
 
 export class Bars {
     #bars
@@ -85,6 +95,12 @@ export class Bars {
         this.#timer = setTimeout(() => this.hide(), this.#options.delayMs)
     }
 
+    /** The tap grid of the chosen pattern (a missing or broken choice uses the default). */
+    tapMap() {
+        const { config, prefs } = this.#ctx
+        return new TapMap(findPattern(config, prefs.get('tapPattern'))?.rows)
+    }
+
     /**
      * A tap at viewport position (x, y). Top/bottom zones toggle the bars; in page mode the
      * left/right thirds turn pages; anything else hides the bars again.
@@ -92,12 +108,12 @@ export class Bars {
     tap(x, y) {
         const zone = Number(this.#options.tapZone) || 0.18
         const height = innerHeight
-        if (y < height * zone || y > height * (1 - zone)) return this.toggle()
         if (!this.#ctx.engine.scrolled) {
-            if (x < innerWidth * 0.3) return this.#ctx.engine.prev()
-            if (x > innerWidth * 0.7) return this.#ctx.engine.next()
-            return this.toggle()
+            const action = this.tapMap().actionAt(x / innerWidth, y / height)
+            // letters not listed here are reserved for future actions and do nothing
+            return ACTIONS[action]?.(this, this.#ctx)
         }
+        if (y < height * zone || y > height * (1 - zone)) return this.toggle()
         if (this.visible) this.hide()
     }
 }

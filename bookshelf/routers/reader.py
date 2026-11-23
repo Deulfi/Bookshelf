@@ -12,7 +12,7 @@ from ..deps import DB, AppStorage, CurrentUser
 from ..formats import READABLE_FORMATS
 from ..icons import reader_icons
 from ..models import ReadingProgress, User
-from ..services import library, progress, reader_config, reading_stats
+from ..services import library, progress, reader_config, reading_stats, tap_patterns
 from ..services.library import BookEntry
 from ..templating import render
 
@@ -62,6 +62,7 @@ def read_book(
         "config": reader_config.effective_config(storage, user),
         "prefs": reader_config.get_prefs(db, user),
         "plugins": reader_config.plugin_urls(storage),
+        "tapPatterns": tap_patterns.load_patterns(storage),
     }
     if at or fraction is not None:
         bootstrap["resume"] = {
@@ -155,12 +156,16 @@ def put_prefs(db: DB, user: CurrentUser, prefs: Any = Body()) -> JSONResponse:
 
 
 @router.get("/api/reader/layout")
-def layout_editor_data(user: CurrentUser, storage: AppStorage) -> JSONResponse:
-    """Everything the bar editor on the settings page needs."""
+def layout_editor_data(user: CurrentUser, storage: AppStorage, scope: str = "user") -> JSONResponse:
+    """Everything the bar editor on the settings page needs. ``scope=server`` (admins) edits
+    the server-wide bars, which start from the built-in defaults instead of the user's file."""
+    server = scope == "server" and user.is_admin
+    server_layout = reader_config.effective_config(storage, None)["layout"]
+    own_layout = reader_config.effective_config(storage, user)["layout"]
     return JSONResponse(
         {
-            "layout": reader_config.effective_config(storage, user)["layout"],
-            "defaultLayout": reader_config.effective_config(storage, None)["layout"],
+            "layout": server_layout if server else own_layout,
+            "defaultLayout": reader_config.load_defaults()["layout"] if server else server_layout,
             "plugins": reader_config.plugin_urls(storage),
             "limits": reader_config.LAYOUT_NUMBERS,
         }

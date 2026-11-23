@@ -20,6 +20,8 @@ export class ChapterFlow {
     #frame = 0
     #upIntentAt = -Infinity // when the reader last tried to scroll up at the start edge
     #edgeSince = 0 // when the current edge was reached
+    #hovered = false // the pointer is on the hint, which keeps it up and makes it a button
+    #demo = null // { px, amount, timer } while the bar editor's scroll distance field has focus
 
     constructor(engine, { enabled, options }) {
         this.#engine = engine
@@ -33,7 +35,22 @@ export class ChapterFlow {
         }
         this.#hint = document.getElementById('chapter-hint')
         this.#label = this.#hint.querySelector('.ch-label')
+        this.#hint.addEventListener('pointerenter', () => { this.#hovered = true; this.#render() })
+        this.#hint.addEventListener('pointerleave', () => { this.#hovered = false; this.#render() })
+        this.#hint.addEventListener('click', e => {
+            e.stopPropagation() // a click here turns the chapter and nothing else (no bars)
+            if (this.#edge && !this.#demo && performance.now() >= this.#busyUntil) this.#turn(this.#edge)
+        })
         this.#listen(engine.view)
+        // the scroll distance demo also listens outside the book (the editor covers it)
+        addEventListener('wheel', e => this.#demoPush(e.deltaY * (e.deltaMode === 1 ? 32 : 1)),
+            { passive: true })
+        addEventListener('touchmove', e => {
+            const y = e.touches[0]?.screenY
+            if (this.#demo && this.#demo.y !== undefined && y !== undefined) this.#demoPush(this.#demo.y - y)
+            if (this.#demo && y !== undefined) this.#demo.y = y
+        }, { passive: true })
+        addEventListener('touchend', () => { if (this.#demo) this.#demo.y = undefined }, { passive: true })
         engine.addEventListener('load', e => this.#listen(e.detail.doc))
         engine.renderer.addEventListener('scroll', () => this.#scheduleCheck())
         engine.addEventListener('relocate', () => this.#scheduleCheck())
@@ -42,6 +59,25 @@ export class ChapterFlow {
     /** New layout.chapterFlow numbers (saved in the bar editor). */
     setOptions(options) {
         this.#options = { ...this.#options, ...options }
+    }
+
+    /**
+     * Show how far "the scroll distance" is: while the bar editor's field has focus, scrolling
+     * with the wheel or a finger fills a meter up to `px`. Pass null when the field loses focus.
+     */
+    demoDistance(px) {
+        if (this.#demo) clearTimeout(this.#demo.timer)
+        this.#demo = px ? { px, amount: 0, timer: null } : null
+        this.#render()
+    }
+
+    #demoPush(delta) {
+        const demo = this.#demo
+        if (!demo || !delta) return
+        demo.amount = Math.min(demo.px, demo.amount + Math.abs(delta))
+        clearTimeout(demo.timer)
+        demo.timer = setTimeout(() => { demo.amount = 0; this.#render() }, this.#options.resetMs)
+        this.#render()
     }
 
     setEnabled(enabled) {
@@ -138,11 +174,14 @@ export class ChapterFlow {
     // ---------- hint ----------
 
     #render() {
+        if (this.#demo) return this.#renderDemo()
+        this.#hint.classList.remove('is-demo')
         const edge = this.#edge
         // The end of a chapter is where reading leads, so its hint shows on arrival. The start
         // is where every chapter opens, so that hint waits until you scroll up there.
         const visible = edge > 0
-            || (edge < 0 && performance.now() - this.#upIntentAt < this.#options.resetMs)
+            || (edge < 0 && (this.#hovered
+                || performance.now() - this.#upIntentAt < this.#options.resetMs))
         // A hidden hint drops its fill too: a stale "is-filling" would keep it on screen.
         const progress = visible ? Math.min(1, this.#amount / this.#options.overscrollPx) : 0
         this.#hint.classList.toggle('is-active', visible)
@@ -152,5 +191,15 @@ export class ChapterFlow {
         this.#hint.dataset.dir = edge > 0 ? 'next' : 'prev'
         this.#label.textContent = edge > 0
             ? 'Scroll on for the next chapter' : 'Scroll on for the previous chapter'
+    }
+
+    #renderDemo() {
+        const { px, amount } = this.#demo
+        this.#hint.classList.add('is-active')
+        this.#hint.classList.toggle('is-filling', amount > 0)
+        this.#hint.classList.add('is-demo')
+        this.#hint.dataset.dir = 'next'
+        this.#hint.style.setProperty('--progress', String(amount / px))
+        this.#label.textContent = `Scroll to try it: ${Math.round(amount)} of ${px} px`
     }
 }

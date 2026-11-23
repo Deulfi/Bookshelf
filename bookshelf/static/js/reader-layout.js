@@ -3,14 +3,15 @@
 import { iconsFrom, mountLayoutEditor } from './reader/layout-editor.js'
 
 const root = document.getElementById('layout-editor')
+const serverRoot = document.getElementById('server-layout-editor') // admins only
 
 // The JSON box under "Advanced" shows the file; reload it so both views agree.
-async function refreshJsonBox() {
-    const box = document.getElementById('reader-config')
+async function refreshJsonBox(id = 'reader-config') {
+    const box = document.getElementById(id)
     if (!box) return
     const res = await fetch(location.pathname)
     const page = new DOMParser().parseFromString(await res.text(), 'text/html')
-    box.value = page.getElementById('reader-config')?.value ?? box.value
+    box.value = page.getElementById(id)?.value ?? box.value
 }
 
 mountLayoutEditor(root, {
@@ -20,3 +21,13 @@ mountLayoutEditor(root, {
     icon: iconsFrom(document.getElementById('reader-icons')),
     onSaved: refreshJsonBox,
 })
+
+if (serverRoot) {
+    mountLayoutEditor(serverRoot, {
+        elementsUrl: serverRoot.dataset.elementsUrl,
+        saveUrl: serverRoot.dataset.saveUrl,
+        compact: true,
+        icon: iconsFrom(document.getElementById('reader-icons')),
+        onSaved: () => refreshJsonBox('server-config'),
+    })
+}

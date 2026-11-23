@@ -103,10 +103,18 @@
           ]
         },
         {
+          "key": "tapPattern",
+          "type": "tappattern",
+          "label": "Tap areas",
+          "default": "Thirds",
+          "showWhen": { "flow": "paginated" }
+        },
+        {
           "key": "autoAdvance",
           "type": "toggle",
           "label": "Load next chapter when scrolling past the end",
-          "default": true
+          "default": true,
+          "showWhen": { "flow": "scrolled" }
         },
         {
           "key": "maxWidth",

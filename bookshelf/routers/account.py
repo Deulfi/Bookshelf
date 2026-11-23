@@ -24,6 +24,11 @@ def _render_settings(request: Request, db: DB, user: User, status_code: int = 20
     config_path = reader_config.user_config_path(storage, user)
     extra.setdefault("reader_config_text", reader_config.user_config_text(storage, user))
     extra.setdefault("reader_file_error", reader_config.user_config_error(storage, user))
+    if user.is_admin:
+        extra.setdefault("server_config_text", reader_config.server_config_text(storage))
+        extra.setdefault(
+            "server_config_dir", storage.reader_dir.relative_to(storage.root).as_posix()
+        )
     extra.setdefault("reader_config_file", config_path.relative_to(storage.root).as_posix())
     return render(
         request,
@@ -118,6 +123,39 @@ def save_reader_layout(
     except reader_config.ReaderConfigError as exc:
         return JSONResponse({"error": str(exc)}, status_code=422)
     return JSONResponse({"layout": reader_config.effective_config(storage, user)["layout"]})
+
+
+@router.post("/settings/reader/server")
+def save_server_reader_config(
+    request: Request,
+    db: DB,
+    admin: AdminUser,
+    config: Annotated[str, Form()] = "",
+    action: Annotated[str, Form()] = "save",
+) -> Response:
+    """Admins: replace the server-wide reader defaults (or clear them with ``action=reset``)."""
+    text = "" if action == "reset" else config
+    try:
+        reader_config.save_server_config(request.app.state.storage, text)
+    except reader_config.ReaderConfigError as exc:
+        return _render_settings(
+            request, db, admin, status_code=422, server_error=str(exc), server_config_text=config
+        )
+    return RedirectResponse("/settings?server=saved#server-reader", status_code=303)
+
+
+@router.post("/settings/reader/server/layout")
+def save_server_reader_layout(
+    _admin: AdminUser, storage: AppStorage, body: Annotated[Any, Body()] = None
+) -> JSONResponse:
+    """Admins: save the bar editor's result as the server-wide default bars."""
+    if not isinstance(body, dict) or "layout" not in body:
+        return JSONResponse({"error": "Expected an object with “layout”."}, status_code=422)
+    try:
+        reader_config.save_server_layout(storage, body["layout"])
+    except reader_config.ReaderConfigError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=422)
+    return JSONResponse({"layout": reader_config.effective_config(storage, None)["layout"]})
 
 
 @router.get("/settings/reader/defaults")

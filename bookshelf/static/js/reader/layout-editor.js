@@ -37,6 +37,7 @@ function fromConfig(config) {
 }
 
 /** Icons from a <template> of `<span data-icon="name"><svg …></span>` (reader-icons). */
+let editors = 0 // ids of form fields must stay unique when the settings page mounts two editors
 export function iconsFrom(template) {
     const map = new Map([...(template?.content.children ?? [])]
         .map(el => [el.dataset.icon, el.firstElementChild]))
@@ -50,6 +51,7 @@ export function iconsFrom(template) {
  *   icon(name)            an icon element for the mockup, or null
  *   onSaved(layout)       called with the saved effective layout
  *   onChange(layout)      called with the edited, not yet saved layout after every edit
+ *   onScrollDistance(px)  the scroll distance field has focus (px) or lost it (null), for a meter
  *   onTapZone(fraction)   the tap area field has focus (fraction) or lost it (null), for a guide
  *   toolbar               an element with [data-le-save], [data-le-reset] buttons and a
  *                         .le-status (the reader's window head) used instead of the button row
@@ -57,8 +59,9 @@ export function iconsFrom(template) {
  */
 export async function mountLayoutEditor(root, {
     elementsUrl, saveUrl, compact = false, icon = () => null, onSaved = () => {},
-    onChange = null, onTapZone = null, toolbar = null,
+    onChange = null, onTapZone = null, onScrollDistance = null, toolbar = null,
 } = {}) {
+    const instance = ++editors
     let elements = new Map() // id -> catalog entry
     let layout // { top: [{id, ...options}], bottom: [...], autohide: {}, chapterFlow: {} }
     let limits = {}
@@ -264,7 +267,7 @@ export async function mountLayoutEditor(root, {
         const [delayMin, delayMax] = range('autohide', 'delayMs', [500, 60000])
         const [zoneMin, zoneMax] = range('autohide', 'tapZone', [0.05, 0.45])
         const [overMin, overMax] = range('chapterFlow', 'overscrollPx', [20, 2000])
-        const uid = compact ? 'le' : 'le-reader'
+        const uid = compact ? `le-${instance}` : 'le-reader'
         const number = (section, key, scale = 1) => e => {
             const value = Number(e.target.value) * scale
             if (Number.isFinite(value)) { layout[section][key] = value; markDirty() }
@@ -287,7 +290,10 @@ export async function mountLayoutEditor(root, {
                     onblur: () => onTapZone?.(null) })),
             h('div', { class: 'le-option' }, h('label', { for: `${uid}-over` }, 'Scroll distance past a chapter end to load the next one (px)'),
                 h('input', { class: 'input', id: `${uid}-over`, type: 'number', min: overMin, max: overMax, step: 10,
-                    value: chapterFlow.overscrollPx ?? 160, oninput: number('chapterFlow', 'overscrollPx') })),
+                    value: chapterFlow.overscrollPx ?? 160,
+                    oninput: e => { number('chapterFlow', 'overscrollPx')(e); onScrollDistance?.(layout.chapterFlow.overscrollPx) },
+                    onfocus: () => onScrollDistance?.(layout.chapterFlow.overscrollPx ?? 160),
+                    onblur: () => onScrollDistance?.(null) })),
         )
     }
 
