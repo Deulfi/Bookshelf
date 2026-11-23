@@ -154,6 +154,26 @@ class Storage:
         shutil.copy2(source, target)
         return relative
 
+    def replace_book_file(self, book: Book, source: Path, fmt: str) -> str:
+        """Put ``source`` where ``book``'s file is (a new version of it) and return the path
+        used: the same one, or the same name with the new extension if the format changed. The
+        copy goes next to the target first, so the swap is atomic even across file systems."""
+        located = self._locate(book)
+        root, current = located if located else (self.library_root(book.user_id), None)
+        relative = PurePosixPath(book.file_path).with_suffix(f".{fmt}").as_posix()
+        relative = self.unique_relative(root, relative, own=current)
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        staging = target.with_name(f".{target.name}.{uuid.uuid4().hex}.part")
+        try:
+            shutil.copyfile(source, staging)
+            os.replace(staging, target)
+        finally:
+            staging.unlink(missing_ok=True)
+        if current is not None and not _same_file(current, target):
+            current.unlink(missing_ok=True)
+        return relative
+
     def find_book_file(self, book: Book) -> Path | None:
         located = self._locate(book)
         return located[1] if located else None

@@ -17,7 +17,7 @@ from ..db import utcnow
 from ..formats import detect_format
 from ..models import Book, ReadingProgress, User
 from ..storage import Storage
-from . import covers
+from . import covers, progress, reading_stats
 from .hashing import filename_md5, partial_md5
 from .metadata import extract_metadata
 
@@ -140,6 +140,105 @@ def import_book(
         temp_path.unlink(missing_ok=True)
 
 
+def replace_file(
+    db: Session,
+    storage: Storage,
+    book: Book,
+    filename: str,
+    source: BinaryIO,
+    *,
+    max_bytes: int,
+) -> Book:
+    """Swap ``book``'s file for a new version of it, e.g. a web novel with new chapters. The
+    book keeps its id, metadata, cover and e-reader mark; see ``_switch_to_file``."""
+    filename = PurePath(filename.replace("\\", "/")).name[:500] or "upload"
+    fmt = detect_format(filename)
+    if fmt is None:
+        raise LibraryError(f"Unsupported file type: {filename}")
+    temp_path = storage.new_temp_path()
+    try:
+        size = _copy_limited(source, temp_path, max_bytes)
+        if size == 0:
+            raise LibraryError("The file is empty.")
+        document_hash = partial_md5(temp_path)
+        if document_hash == book.partial_md5:
+            raise LibraryError("That is the same file this book already has.")
+        _check_hash_is_free(db, book, document_hash)
+        relative = storage.replace_book_file(book, temp_path, fmt)
+        _switch_to_file(
+            db,
+            book,
+            relative=relative,
+            fmt=fmt,
+            size=size,
+            document_hash=document_hash,
+            filename=filename,
+        )
+        return book
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+def refresh_from_disk(db: Session, book: Book, path: Path) -> bool:
+    """A scan found ``book``'s file changed in place (a new version copied over it): take over
+    its new hash like ``replace_file``. False if it turned out unchanged."""
+    document_hash = partial_md5(path)
+    size = path.stat().st_size
+    if document_hash == book.partial_md5:
+        if book.file_size != size:
+            book.file_size = size
+            db.commit()
+        return False
+    _check_hash_is_free(db, book, document_hash)
+    _switch_to_file(
+        db,
+        book,
+        relative=book.file_path,
+        fmt=book.format,
+        size=size,
+        document_hash=document_hash,
+        filename=book.original_filename,
+    )
+    return True
+
+
+def _check_hash_is_free(db: Session, book: Book, document_hash: str) -> None:
+    other = db.scalar(
+        select(Book).where(
+            Book.user_id == book.user_id, Book.partial_md5 == document_hash, Book.id != book.id
+        )
+    )
+    if other is not None:
+        raise DuplicateBookError(other)
+
+
+def _switch_to_file(
+    db: Session,
+    book: Book,
+    *,
+    relative: str,
+    fmt: str,
+    size: int,
+    document_hash: str,
+    filename: str,
+) -> None:
+    """Point ``book`` at its new file and move everything keyed by the old KOReader document
+    IDs (position, web reader and Readest time, sessions) to the new ones, so devices that sync
+    the new file continue where the old one was. KOReader's own statistics stay with the old
+    file, as they do in KOReader."""
+    new_name = filename_md5(filename)
+    progress.move_progress(db, book.user_id, book.partial_md5, document_hash)
+    progress.move_progress(db, book.user_id, book.filename_md5, new_name)
+    reading_stats.move_document(db, book.user_id, book.partial_md5, document_hash)
+    book.file_path = relative
+    book.format = fmt
+    book.file_size = size
+    book.partial_md5 = document_hash
+    book.filename_md5 = new_name
+    book.original_filename = filename
+    db.commit()
+
+
 def _duplicate_scope(storage: Storage, user: User) -> Select:
     """Books a scanned file is compared with. The shared ingest folder holds every user's
     uploads, so there any user's copy counts; a per-user folder only knows its owner's books."""
@@ -206,7 +305,16 @@ def sync_library(
         return 0  # the shared folder is not mounted: never touch the database then
     root.mkdir(parents=True, exist_ok=True)
     reorganize_legacy_files(db, storage, user, log=log)
-    known_paths = set(db.scalars(_duplicate_scope(storage, user).with_only_columns(Book.file_path)))
+    # Path -> (id, size) of the known books; a different size means a new version was copied
+    # over the file. A same-size change is not looked for: that would mean hashing every file.
+    known_paths = {
+        row.file_path: (row.id, row.file_size)
+        for row in db.execute(
+            _duplicate_scope(storage, user).with_only_columns(
+                Book.file_path, Book.id, Book.file_size
+            )
+        )
+    }
     imported = 0
     seen_files = 0
     now = time.time()
@@ -216,6 +324,7 @@ def sync_library(
         seen_files += 1
         relative = path.relative_to(root).as_posix()
         if relative in known_paths:
+            _refresh_if_changed(db, path, *known_paths[relative], now=now, log=log)
             continue
         try:
             if now - path.stat().st_mtime < SETTLE_SECONDS:
@@ -229,7 +338,7 @@ def sync_library(
                 log(f"skipped {relative}: {error}")
             continue
         imported += 1
-        known_paths.add(relative)
+        known_paths[relative] = (book.id, book.file_size)
         if log:
             log(f"imported {relative} as #{book.id}")
     # An empty shared folder usually means an unmounted share, not a deleted library: never
@@ -237,6 +346,28 @@ def sync_library(
     if seen_files or not shared:
         prune_missing(db, storage, log=log, user=None if shared else user)
     return imported
+
+
+def _refresh_if_changed(
+    db: Session,
+    path: Path,
+    book_id: int,
+    size: int,
+    *,
+    now: float,
+    log: Callable[[str], None] | None,
+) -> None:
+    try:
+        stat = path.stat()
+        if stat.st_size == size or now - stat.st_mtime < SETTLE_SECONDS:
+            return
+        book = db.get(Book, book_id)
+        if book is not None and refresh_from_disk(db, book, path) and log:
+            log(f"updated #{book.id} “{book.title}”: the file changed ({book.file_path})")
+    except (LibraryError, OSError) as error:
+        db.rollback()
+        if log:
+            log(f"skipped the new version of {path.name}: {error}")
 
 
 _LEGACY_NAME = re.compile(r"^[0-9a-f]{32}$")

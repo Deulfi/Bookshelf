@@ -26,7 +26,7 @@ from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from ..models import Book, PageStatEvent, ReadingSession, WebReadingTime
@@ -294,6 +294,49 @@ def add_page_events(
         added += 1
     db.commit()
     return added
+
+
+def move_document(db: Session, user_id: int, old: str, new: str) -> None:
+    """Move the web reader's and Readest's time, sessions and page views of a book to another
+    document ID (its file was replaced). Time already recorded for the new ID is kept and added
+    to. KOReader's statistics file is not touched. Does not commit."""
+    if old == new:
+        return
+    for bucket in db.scalars(
+        select(WebReadingTime).where(
+            WebReadingTime.user_id == user_id, WebReadingTime.document == old
+        )
+    ).all():
+        target = db.get(WebReadingTime, (user_id, new, bucket.hour))
+        if target is None:
+            db.add(
+                WebReadingTime(
+                    user_id=user_id,
+                    document=new,
+                    hour=bucket.hour,
+                    seconds=bucket.seconds,
+                    last_read=bucket.last_read,
+                )
+            )
+        else:
+            target.seconds += bucket.seconds
+            target.last_read = max(target.last_read, bucket.last_read)
+        db.delete(bucket)
+    db.execute(
+        update(ReadingSession)
+        .where(ReadingSession.user_id == user_id, ReadingSession.document == old)
+        .values(document=new)
+    )
+    # A page view already recorded under the new ID stays as it is; the old copy goes.
+    db.execute(
+        update(PageStatEvent)
+        .where(PageStatEvent.user_id == user_id, PageStatEvent.document == old)
+        .values(document=new)
+        .prefix_with("OR IGNORE")
+    )
+    db.execute(
+        delete(PageStatEvent).where(PageStatEvent.user_id == user_id, PageStatEvent.document == old)
+    )
 
 
 def delete_web_session(db: Session, user_id: int, document: str, session_id: int) -> bool:

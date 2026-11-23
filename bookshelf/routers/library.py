@@ -175,6 +175,7 @@ def _render_book(
     *,
     error: str | None = None,
     progress_error: str | None = None,
+    replace_error: str | None = None,
 ) -> Response:
     stats = reading_stats.book_stats(
         reading_stats.statistics_path(storage, user.id),
@@ -194,7 +195,7 @@ def _render_book(
     return render(
         request,
         "book.html",
-        status_code=422 if error or progress_error else 200,
+        status_code=422 if error or progress_error or replace_error else 200,
         user=user,
         nav="library",
         entry=entry,
@@ -207,6 +208,7 @@ def _render_book(
         series=library.series_books(db, user, entry.book),
         error=error,
         progress_error=progress_error,
+        replace_error=replace_error,
         **_sessions_page(request, db, storage, user, entry.book, offset=0),
     )
 
@@ -345,6 +347,33 @@ def update_book(
             except library.LibraryError as exc:
                 entry = _entry_or_404(db, user, book_id)
                 return _render_book(request, db, storage, user, entry, error=str(exc))
+    return RedirectResponse(f"/books/{book_id}", status_code=303)
+
+
+@router.post("/books/{book_id}/file")
+def replace_book_file(
+    request: Request,
+    db: DB,
+    user: CurrentUser,
+    storage: AppStorage,
+    settings: AppSettings,
+    book_id: int,
+    file: Annotated[UploadFile, File()],
+) -> Response:
+    """Upload a new version of the book's file (book page, "Replace file")."""
+    entry = _entry_or_404(db, user, book_id)
+    try:
+        library.replace_file(
+            db,
+            storage,
+            entry.book,
+            file.filename or "upload",
+            file.file,
+            max_bytes=settings.max_upload_bytes,
+        )
+    except library.LibraryError as exc:
+        entry = _entry_or_404(db, user, book_id)
+        return _render_book(request, db, storage, user, entry, replace_error=str(exc))
     return RedirectResponse(f"/books/{book_id}", status_code=303)
 
 

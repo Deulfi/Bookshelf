@@ -38,6 +38,25 @@ def save_progress(
     return record
 
 
+def move_progress(db: Session, user_id: int, old: str, new: str) -> None:
+    """Carry a position over to another document ID (a book's file was replaced). If the new
+    file already has a position (read on a device before it was replaced here), the newer one
+    wins. Does not commit."""
+    if old == new:
+        return
+    record = get_progress(db, user_id, old)
+    if record is None:
+        return
+    current = get_progress(db, user_id, new)
+    if current is not None and current.timestamp >= record.timestamp:
+        db.delete(record)
+        return
+    if current is not None:
+        db.delete(current)
+        db.flush()
+    record.document = new
+
+
 # --- Editing progress by hand (book page) ----------------------------------------------------
 
 MANUAL_DEVICE = "Bookshelf (edited)"

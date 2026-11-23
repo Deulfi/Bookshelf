@@ -38,6 +38,9 @@ Everything runs in one small Docker container with a single SQLite database.
 
 - **Simple uploads.** Drag and drop files or whole folders anywhere on the page, or pick them.
   Duplicates are detected.
+- **New versions of a book.** *Replace file* on a book's page swaps in a newer file, such as a web
+  novel with new chapters, and keeps the book's details, reading position, reading time and
+  sessions. Copying a new version over the file in the library folder does the same on the next scan.
 - **Series.** The *Series* switch in the library shows each series as one stack of covers (the
   newest volume on top, with the number of books); a book's page lists the other books of its
   series. The switch is remembered.
@@ -173,7 +176,8 @@ all books live in that one shared folder. Uploads go into the library folder, an
 there yourself are picked up by a scan: on startup, with the **Scan** button next to Upload, or
 automatically on an interval an administrator picks under *Settings → Library folders* (where
 administrators can also scan every user's folder at once). A scan also
-removes entries whose file was deleted. Files uploaded by older versions under random names are
+removes entries whose file was deleted, and takes over files that were replaced by a version
+of a different size (see below). Files uploaded by older versions under random names are
 moved into this layout on the first scan. With a shared folder only
 administrators can scan, and new files found there belong to the first administrator.
 
@@ -181,6 +185,16 @@ Scans skip every file and folder whose name starts with a dot (such as Syncthing
 and `.stversions`) and names matching the patterns under *Settings → Library folders → Skip names*
 or in `BOOKSHELF_SCAN_IGNORE`; both apply. Books already imported from such a
 folder are removed from the library on the next scan; their files are left alone.
+
+**New versions of a book.** KOReader, Readest and Bookshelf tell books apart by a hash of the
+file, so a new version (a web novel with more chapters) is a different document to them. Use
+*Replace file* on the book's page, or copy the new file over the old one in the library folder.
+The book keeps its details and cover, and its reading position, web reader and Readest time and
+sessions move to the new file; if a device already synced a newer position for the new file, that
+one is kept. KOReader and Readest continue there once they open the new file, so download it to
+the e-reader again (OPDS sync doesn't fetch it by itself). KOReader's own statistics keep the old
+file's time separately, as KOReader does. Positions stay valid as long as chapters were added at
+the end. A scan only notices a copied-over file when its size changed.
 
 ### Command line
 

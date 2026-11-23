@@ -75,6 +75,7 @@
         {% endif %}
       </form>
       <button type="button" class="btn" data-dialog-open="edit-dialog">{{ icon('edit', 18) }} Edit</button>
+      <button type="button" class="btn" data-dialog-open="replace-dialog" title="Upload a new version of this book">{{ icon('upload', 18) }} Replace file</button>
       <form method="post" action="/books/{{ book.id }}/delete" data-confirm="Delete “{{ book.title }}”? This can’t be undone.">
         <button class="btn btn-danger">{{ icon('trash', 18) }} Delete</button>
       </form>
@@ -149,6 +150,26 @@
     </footer>
   </form>
   <form id="progress-delete" method="post" action="/books/{{ book.id }}/progress/delete" data-confirm="Reset the reading progress of “{{ book.title }}”? The book will show as unread." hidden></form>
+</dialog>
+
+<dialog id="replace-dialog" class="dialog dialog-sm" aria-labelledby="replace-title"{% if replace_error %} data-open{% endif %}>
+  <form method="post" action="/books/{{ book.id }}/file" enctype="multipart/form-data" class="form">
+    <header class="dialog-head">
+      <h2 id="replace-title">Replace file</h2>
+      <button type="button" class="icon-btn" data-dialog-close aria-label="Close">{{ icon('x') }}</button>
+    </header>
+    {{ alert(replace_error) }}
+    <p class="muted small">For a new version of the same book, such as a web novel with new chapters. Title, cover and other details stay as they are.</p>
+    <p class="muted small">The reading position, reading time and sessions move to the new file. KOReader and Readest continue there once they have the new file and sync. The copy on your e-reader isn’t updated automatically: download it again.</p>
+    <div class="field">
+      <label for="replace-file">New file</label>
+      <input class="input input-file" id="replace-file" name="file" type="file" accept="{{ upload_accept }}" required>
+    </div>
+    <footer class="dialog-foot">
+      <button type="button" class="btn" data-dialog-close>Cancel</button>
+      <button class="btn btn-primary">{{ icon('upload', 16) }} Replace</button>
+    </footer>
+  </form>
 </dialog>
 
 <dialog id="edit-dialog" class="dialog" aria-labelledby="edit-title">

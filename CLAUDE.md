@@ -102,6 +102,9 @@ scripts/dev_seed.py  demo data for local development
   `static/js/reader/xpointer.js`), and `percentage` stays a 0–1 fraction.
 - **Document IDs** (`services/hashing.py`): `partial_md5` must match KOReader's `util.partialMD5`.
   The library connects progress to books through `Book.partial_md5` / `Book.filename_md5`.
+  A new file for an existing book (`library.replace_file`, or a scan finding a changed size)
+  goes through `library._switch_to_file`, which moves everything keyed by the old hash; data
+  you add that is keyed by document hash must be moved there too.
 - **OPDS** (`routers/opds.py`): OPDS 1.2 Atom feeds with HTTP Basic auth. Feeds must stay
   well-formed XML, so test with `ElementTree` when you change templates.
 - **OPDS sync feeds** (`/opds/sync`, `/opds/books?sort=recent`): KOReader's catalog sync reads
