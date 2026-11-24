@@ -6,9 +6,14 @@
   <meta name="theme-color" content="#ffffff">
   <title>{{ book.title }} · Bookshelf</title>
   <link rel="icon" href="{{ static('favicon.svg') }}" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="{{ static('icons/apple-touch-icon.png') }}">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Bookshelf">
   <link rel="stylesheet" href="{{ static('css/app.css') }}">
   <link rel="stylesheet" href="{{ static('css/reader.css') }}">
   <script type="importmap">{{ reader_import_map()|tojson }}</script>
+  <script src="{{ static('js/pwa.js') }}" defer></script>
 </head>
 <body class="reader-page">
   <header class="reader-bar reader-bar-top" id="reader-top" aria-label="Reader toolbar"></header>

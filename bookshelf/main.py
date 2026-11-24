@@ -8,7 +8,7 @@ from urllib.parse import quote, urlsplit
 
 from fastapi import FastAPI, Request
 from fastapi.exception_handlers import http_exception_handler
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.gzip import GZipMiddleware
@@ -100,6 +100,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     static = VersionedStaticFiles(directory=STATIC_DIR)
     app.mount("/static", GZipMiddleware(static, minimum_size=1024), name="static")
+
+    # PWA: the manifest and the service worker are public and must sit at the site root
+    # (the worker's scope is the path it is served from, and it has to control "/").
+    @app.get("/manifest.webmanifest", include_in_schema=False)
+    async def web_manifest() -> FileResponse:
+        return FileResponse(
+            STATIC_DIR / "manifest.webmanifest", media_type="application/manifest+json"
+        )
+
+    @app.get("/sw.js", include_in_schema=False)
+    async def service_worker() -> FileResponse:
+        return FileResponse(
+            STATIC_DIR / "sw.js",
+            media_type="text/javascript",
+            headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"},
+        )
+
     routers = (
         auth,
         library,
