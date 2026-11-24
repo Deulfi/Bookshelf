@@ -1,5 +1,6 @@
-{# Rows of the book page's reading session log; "Show more" replaces itself with the next page.
-   A row opens the reader where that session ended; web reader sessions can be deleted. #}
+{# Rows of the book page's reading session log. The trailing sentinel auto-loads the next page
+   when it scrolls into view inside the scrollable list (.session-scroll), so there is no button
+   to press. A row opens the reader where that session ended; web reader sessions can be deleted. #}
 {% for session in sessions %}
 {% set resume = sessions_can_resume and (session.resume_position or session.resume_fraction is not none) %}
 <li class="session">
@@ -29,7 +30,7 @@
 </li>
 {% endfor %}
 {% if sessions_more_url %}
-<li class="session-more">
-  <button type="button" class="btn btn-sm" hx-get="{{ sessions_more_url }}" hx-target="closest li" hx-swap="outerHTML">Show more</button>
-</li>
+<li class="session-more" hx-get="{{ sessions_more_url }}"
+    hx-trigger="intersect once root:.session-scroll" hx-target="this" hx-swap="outerHTML"
+    hx-push-url="false">Loading more…</li>
 {% endif %}

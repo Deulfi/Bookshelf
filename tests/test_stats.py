@@ -305,6 +305,9 @@ def test_koreader_sessions_and_paging(admin_client: TestClient, tmp_path: Path) 
     assert "pages 34–36 of 100" in page  # the newest sitting comes first
     assert "pages 1–3" not in page
     assert f"/books/{book_id}/sessions?offset=10" in page
+    # Auto-loading scroll list, not a button to press: the sentinel loads on intersect.
+    assert "session-scroll" in page
+    assert 'hx-trigger="intersect' in page and "Show more" not in page
 
     more = admin_client.get(f"/books/{book_id}/sessions?offset=10").text
     assert more.count('class="session"') == 2

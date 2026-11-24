@@ -98,7 +98,9 @@
     {% if sessions %}
     <section class="sessions" aria-labelledby="sessions-title">
       <h2 class="sessions-title" id="sessions-title">{{ icon('chart', 16) }} Reading sessions</h2>
-      <ul class="session-list">{% include "partials/sessions.html" %}</ul>
+      <div class="session-scroll" tabindex="0">
+        <ul class="session-list">{% include "partials/sessions.html" %}</ul>
+      </div>
     </section>
     {% endif %}
   </div>
