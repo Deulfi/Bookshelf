@@ -296,12 +296,33 @@ def test_tab_shown_when_configured(configured_client: TestClient) -> None:
     assert "Add web novel" in page.text
 
 
-def test_add_then_poll_renders_cards_and_imports(
+def test_tab_load_catches_up_a_finished_import(
     configured_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = FakeClient(
-        make_epub(title="Polled Novel", series=None),
+        make_epub(title="CaughtUp", series=None),
         {"job-fetch": _done("job-fetch", novel_id="nv1"), "job-render": _done("job-render")},
+    )
+    _use(monkeypatch, fake)
+    app = configured_client.app
+    with app.state.sessionmaker() as db:
+        user = db.scalar(select(User))
+        rid = webnovels.start_import(db, app.state.settings, user, URL).id
+
+    # Load the tab without ever hitting the status poll — as if returning after leaving.
+    configured_client.get("/webnovels")
+    with app.state.sessionmaker() as db:
+        record = db.get(WebnovelImport, rid)
+        assert record.state == "ready"
+        assert db.get(Book, record.book_id).title == "CaughtUp"
+
+
+def test_add_then_poll_renders_cards_and_imports(
+    configured_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The crawl is still running when the tab first loads, so the card shows "Working".
+    fake = FakeClient(
+        make_epub(title="Polled Novel", series=None), {"job-fetch": _running("job-fetch", 10)}
     )
     _use(monkeypatch, fake)
 
@@ -313,10 +334,13 @@ def test_add_then_poll_renders_cards_and_imports(
     with configured_client.app.state.sessionmaker() as db:
         rid = db.scalar(select(WebnovelImport.id))
 
+    # The crawl and render finish on lncrawl; each poll advances one step.
+    fake.jobs["job-fetch"] = _done("job-fetch", novel_id="nv1")
+    fake.jobs["job-render"] = _done("job-render")
     first = configured_client.get(f"/webnovels/{rid}/status").text
-    assert "hx-get" in first  # still polling after the fetch step
+    assert "hx-get" in first  # fetch done -> rendering; still polling
     second = configured_client.get(f"/webnovels/{rid}/status").text
-    assert "hx-get" not in second  # finished: polling stops
+    assert "hx-get" not in second  # imported: polling stops
 
     with configured_client.app.state.sessionmaker() as db:
         record = db.get(WebnovelImport, rid)

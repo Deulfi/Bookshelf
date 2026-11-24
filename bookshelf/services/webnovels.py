@@ -444,6 +444,20 @@ def advance(
     return record
 
 
+def catch_up(db: Session, storage: Storage, settings: Settings, user: User) -> None:
+    """Advance every running import as far as it can go now. Called when the Web novels tab
+    loads, so a crawl that finished on lncrawl while the tab was closed is picked up at once
+    instead of waiting for the next poll (polling only runs while the tab is open)."""
+    for record in list_imports(db, user):
+        if record.state != "running":
+            continue
+        for _ in range(6):  # fetch -> render -> download is a few steps; bounded for safety
+            before = (record.state, record.stage, record.job_id)
+            advance(db, storage, settings, user, record)
+            if record.state != "running" or (record.state, record.stage, record.job_id) == before:
+                break
+
+
 def _client_or_error(settings: Settings) -> WebnovelClient:
     client = WebnovelClient.from_settings(settings)
     if client is None:

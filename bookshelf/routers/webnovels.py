@@ -44,7 +44,11 @@ def _page(
 
 
 @router.get("/webnovels")
-def webnovels_page(request: Request, db: DB, user: CurrentUser, settings: AppSettings) -> Response:
+def webnovels_page(
+    request: Request, db: DB, user: CurrentUser, storage: AppStorage, settings: AppSettings
+) -> Response:
+    # Pick up imports that finished on lncrawl while the tab (and its polling) was closed.
+    webnovels.catch_up(db, storage, settings, user)
     return _page(request, db, user, settings)
 
 
