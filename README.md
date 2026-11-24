@@ -131,10 +131,27 @@ Set these in `.env` (see [.env.example](.env.example)). All of them are optional
 | `BOOKSHELF_AUTH` | `password` | Web sign-in: `password`, `none` or `header`, see [Signing in](#signing-in) |
 | `BOOKSHELF_AUTH_HEADER` | `Remote-User` | Header with the username, for `BOOKSHELF_AUTH=header` |
 | `BOOKSHELF_AUTH_PROXIES` | *(empty)* | Proxy IPs or networks allowed to send that header, e.g. `172.16.0.0/12` |
+| `BOOKSHELF_LNCRAWL_URL` | *(empty)* | A remote [lncrawl](#web-novels) server to fetch web novels from (empty = hide the Web novels tab) |
+| `BOOKSHELF_LNCRAWL_TOKEN` | *(empty)* | lncrawl API token (create one in lncrawl under *Account → API tokens*) |
+| `BOOKSHELF_LNCRAWL_VERIFY_TLS` | `true` | Verify the lncrawl server's TLS certificate (`false` for a self-signed one) |
 | `TZ` | `UTC` | Time zone for reading statistics, e.g. `Europe/Berlin` |
 
 When running without Docker Compose, `BOOKSHELF_DATA_DIR` (default `./data`, `/data` in the
 image) and `BOOKSHELF_PORT` (default `8080`) control the storage location and listening port.
+
+### Web novels
+
+Bookshelf can fetch web novels as EPUBs from a separate [lightnovel-crawler
+(lncrawl)](https://github.com/lncrawl/lightnovel-crawler) server and keep them updated. Run
+lncrawl in server mode (its own container is simplest, `lncrawl server` otherwise), create an
+API token in its web UI, and point Bookshelf at it with `BOOKSHELF_LNCRAWL_URL` and
+`BOOKSHELF_LNCRAWL_TOKEN`. A **Web novels** tab then appears: paste a novel's URL and lncrawl
+crawls it in the background while the tab shows progress; when it finishes, the EPUB lands in
+your library like any upload, and a **Check for new chapters** button re-fetches it later.
+
+Bookshelf only talks to lncrawl's REST API — it does no scraping itself, and the tab stays
+hidden until `BOOKSHELF_LNCRAWL_URL` is set. For personal use; lncrawl's sources are third-party
+sites that change and break, so some fetches will fail and show an error you can retry.
 
 ### Signing in
 

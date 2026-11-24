@@ -29,6 +29,7 @@ from .routers import (
     reader,
     stats,
     webdav,
+    webnovels,
 )
 from .services.scanner import LibraryScanner
 from .storage import Storage
@@ -99,7 +100,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     static = VersionedStaticFiles(directory=STATIC_DIR)
     app.mount("/static", GZipMiddleware(static, minimum_size=1024), name="static")
-    for module in (auth, library, reader, stats, account, admin, kosync, bookorbit, opds, webdav):
+    routers = (
+        auth,
+        library,
+        reader,
+        stats,
+        account,
+        admin,
+        kosync,
+        bookorbit,
+        opds,
+        webdav,
+        webnovels,
+    )
+    for module in routers:
         app.include_router(module.router)
 
     app.add_exception_handler(kosync.KosyncError, kosync.kosync_error_handler)

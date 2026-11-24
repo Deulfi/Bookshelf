@@ -19,6 +19,7 @@
       <a class="brand" href="/">{{ icon('book', 22) }}<span>Bookshelf</span></a>
       <nav class="nav" aria-label="Main">
         <a href="/" class="{{ 'active' if nav == 'library' }}" title="Library">{{ icon('catalog') }}<span>Library</span></a>
+        <a href="/webnovels" class="{{ 'active' if nav == 'webnovels' }}" title="Web novels">{{ icon('download') }}<span>Web novels</span></a>
         <a href="/stats" class="{{ 'active' if nav == 'stats' }}" title="Statistics">{{ icon('chart') }}<span>Stats</span></a>
         <a href="/settings" class="{{ 'active' if nav == 'settings' }}" title="Settings">{{ icon('settings') }}<span>Settings</span></a>
         {% if user.is_admin %}

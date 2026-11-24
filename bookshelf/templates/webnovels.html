@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% from "_macros.html" import alert %}
+{% block title %}Web novels · Bookshelf{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1 class="page-title">Web novels</h1>
+  <p class="muted">Fetch a novel from a web source as an EPUB, then keep it up to date with new chapters. Finished novels appear in your library like any other book.</p>
+</div>
+
+{% if not configured %}
+<section class="card">
+  <h2>{{ icon('download', 18) }} Not set up yet</h2>
+  <p class="card-sub">Point Bookshelf at an <a class="link" href="https://github.com/lncrawl/lightnovel-crawler">lncrawl</a> server to fetch web novels. Set <code class="mono">BOOKSHELF_LNCRAWL_URL</code> and <code class="mono">BOOKSHELF_LNCRAWL_TOKEN</code> (see the README) and restart.</p>
+</section>
+{% else %}
+<section class="card">
+  <form method="post" action="/webnovels" class="form">
+    {{ alert(error) }}
+    <div class="field">
+      <label for="webnovel-url">Novel URL</label>
+      <input class="input" id="webnovel-url" name="url" type="url" inputmode="url" placeholder="https://…" required>
+      <p class="muted small">The novel's page on a source lncrawl supports. Fetching runs in the background and can take a while.</p>
+    </div>
+    <button class="btn btn-primary">{{ icon('plus', 16) }} Add web novel</button>
+  </form>
+</section>
+
+{% if imports %}
+<div class="webnovel-list">
+  {% for item in imports %}
+    {% include "partials/webnovel_card.html" %}
+  {% endfor %}
+</div>
+{% else %}
+<p class="muted">No web novels yet. Paste a novel URL above to fetch one.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

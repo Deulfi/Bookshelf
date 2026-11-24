@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 from ..deps import DB, AppSettings, AppStorage, CurrentUser
 from ..formats import READABLE_FORMATS
 from ..models import Book, User
-from ..services import chapters, library, progress, reading_stats
+from ..services import chapters, library, progress, reading_stats, webnovels
 from ..services.library import BookEntry
 from ..services.metadata.base import parse_float
 from ..templating import render
@@ -206,6 +206,7 @@ def _render_book(
         chapter_total=outline.chapter_total if outline else None,
         chapter_kind="Chapter" if outline and outline.toc else "Section",
         series=library.series_books(db, user, entry.book),
+        webnovel=webnovels.for_book(db, user, entry.book.id),
         error=error,
         progress_error=progress_error,
         replace_error=replace_error,

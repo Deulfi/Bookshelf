@@ -76,6 +76,11 @@
       </form>
       <button type="button" class="btn" data-dialog-open="edit-dialog">{{ icon('edit', 18) }} Edit</button>
       <button type="button" class="btn" data-dialog-open="replace-dialog" title="Upload a new version of this book">{{ icon('upload', 18) }} Replace file</button>
+      {% if webnovel and webnovel.novel_id %}
+      <form method="post" action="/webnovels/{{ webnovel.id }}/refresh">
+        <button class="btn" title="Fetch new chapters from the web source">{{ icon('sync', 18) }} Check for new chapters</button>
+      </form>
+      {% endif %}
       <form method="post" action="/books/{{ book.id }}/delete" data-confirm="Delete “{{ book.title }}”? This can’t be undone.">
         <button class="btn btn-danger">{{ icon('trash', 18) }} Delete</button>
       </form>

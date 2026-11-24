@@ -34,13 +34,19 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import IntEnum
 from pathlib import Path
 from typing import Any
 
 import httpx
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from ..config import Settings
+from ..models import Book, User, WebnovelImport
+from ..storage import Storage
+from . import library
 
 
 class WebnovelError(Exception):
@@ -273,3 +279,234 @@ def mint_token(base_url: str, email: str, password: str, *, verify_tls: bool = T
         )
         created.raise_for_status()
         return created.json()["token"]
+
+
+# --- Orchestration (DB-backed; drives the two-step import and the refresh) ------------------
+#
+# A web novel runs through its lncrawl jobs entirely in that server; Bookshelf tracks one
+# WebnovelImport row and advances it a step at a time, driven by the Webnovels tab polling
+# ``advance`` every 30s. No background threads: each poll is a quick request that checks the
+# current job and, when it finishes, either starts the next one or imports the finished EPUB.
+
+_LOG_LINES = 50
+
+
+def list_imports(db: Session, user: User) -> list[WebnovelImport]:
+    return list(
+        db.scalars(
+            select(WebnovelImport)
+            .where(WebnovelImport.user_id == user.id)
+            .order_by(WebnovelImport.created_at.desc(), WebnovelImport.id.desc())
+        )
+    )
+
+
+def get_import(db: Session, user: User, import_id: int) -> WebnovelImport | None:
+    return db.scalar(
+        select(WebnovelImport).where(
+            WebnovelImport.id == import_id, WebnovelImport.user_id == user.id
+        )
+    )
+
+
+def for_book(db: Session, user: User, book_id: int) -> WebnovelImport | None:
+    return db.scalar(
+        select(WebnovelImport).where(
+            WebnovelImport.book_id == book_id, WebnovelImport.user_id == user.id
+        )
+    )
+
+
+def delete_import(db: Session, record: WebnovelImport) -> None:
+    """Remove the tracking row only; the imported book, if any, stays in the library."""
+    db.delete(record)
+    db.commit()
+
+
+def start_import(db: Session, settings: Settings, user: User, url: str) -> WebnovelImport:
+    """Submit a crawl for ``url`` and create the tracking row (state=running, stage=fetch)."""
+    url = (url or "").strip()
+    if not url:
+        raise WebnovelError("Enter a novel URL.")
+    client = _client_or_error(settings)
+    with client:
+        job_id = client.submit_fetch(url)
+    record = WebnovelImport(
+        user_id=user.id,
+        source_url=url,
+        title=url,
+        job_id=job_id,
+        state="running",
+        stage="fetch",
+    )
+    _log(record, "Queued the crawl.")
+    db.add(record)
+    db.commit()
+    return record
+
+
+def start_refresh(
+    db: Session, settings: Settings, user: User, record: WebnovelImport
+) -> WebnovelImport:
+    """Re-run the novel through lncrawl's fetch-latest (new chapters, then a fresh EPUB)."""
+    if record.state == "running":
+        return record
+    if not record.novel_id:
+        raise WebnovelError("This novel can't be refreshed yet.")
+    client = _client_or_error(settings)
+    with client:
+        job_id = client.submit_fetch_latest(record.novel_id)
+    record.job_id = job_id
+    record.state = "running"
+    record.stage = "render"
+    _log(record, "Checking for new chapters.")
+    db.commit()
+    return record
+
+
+def advance(
+    db: Session, storage: Storage, settings: Settings, user: User, record: WebnovelImport
+) -> WebnovelImport:
+    """Move a running import forward by one lncrawl job; a no-op once it is ready or failed."""
+    if record.state != "running" or not record.job_id:
+        return record
+    client = WebnovelClient.from_settings(settings)
+    if client is None:
+        _fail(db, record, "Web-novel fetching is not configured.")
+        return record
+    try:
+        with client:
+            job = client.job(record.job_id)
+            if not job.done:
+                record.message = _running_message(record, job)
+                db.commit()
+                return record
+            if job.status is not JobStatus.SUCCESS:
+                _fail(db, record, job.error or "The crawl did not finish.")
+                return record
+            if record.stage == "fetch":
+                _after_fetch(db, record, client, job)
+            else:
+                _ingest(db, storage, settings, user, record, client)
+    except WebnovelError as exc:
+        _fail(db, record, str(exc))
+    return record
+
+
+def _client_or_error(settings: Settings) -> WebnovelClient:
+    client = WebnovelClient.from_settings(settings)
+    if client is None:
+        raise WebnovelError("Web-novel fetching is not configured.")
+    return client
+
+
+def _after_fetch(db: Session, record: WebnovelImport, client: WebnovelClient, job: Job) -> None:
+    novel_id = job.novel_id or record.novel_id
+    if not novel_id:
+        _fail(db, record, "The crawl finished without a novel id.")
+        return
+    record.novel_id = novel_id
+    record.job_id = client.submit_make_epub(novel_id)
+    record.stage = "render"
+    _log(record, "Crawl finished; building the EPUB.")
+    db.commit()
+
+
+def _ingest(
+    db: Session,
+    storage: Storage,
+    settings: Settings,
+    user: User,
+    record: WebnovelImport,
+    client: WebnovelClient,
+) -> None:
+    artifact = client.latest_epub(record.novel_id or "")
+    temp = storage.new_temp_path()
+    try:
+        client.download_epub(artifact, temp)
+        with temp.open("rb") as handle:
+            if record.book_id is None:
+                _create_book(db, storage, settings, user, record, artifact.file_name, handle)
+            else:
+                _replace_book(db, storage, settings, record, artifact.file_name, handle)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def _create_book(
+    db: Session,
+    storage: Storage,
+    settings: Settings,
+    user: User,
+    record: WebnovelImport,
+    filename: str,
+    handle: Any,
+) -> None:
+    try:
+        book = library.import_book(
+            db, storage, user, filename, handle, max_bytes=settings.max_upload_bytes
+        )
+    except library.DuplicateBookError as exc:
+        record.book_id = exc.book.id
+        record.title = exc.book.title
+        _finish(db, record, "This novel is already in your library.")
+        return
+    except library.LibraryError as exc:
+        _fail(db, record, str(exc))
+        return
+    record.book_id = book.id
+    record.title = book.title
+    _finish(db, record, "Imported the EPUB.")
+
+
+def _replace_book(
+    db: Session,
+    storage: Storage,
+    settings: Settings,
+    record: WebnovelImport,
+    filename: str,
+    handle: Any,
+) -> None:
+    book = db.get(Book, record.book_id)
+    if book is None:
+        _fail(db, record, "The book is no longer in your library.")
+        return
+    try:
+        library.replace_file(
+            db, storage, book, filename, handle, max_bytes=settings.max_upload_bytes
+        )
+    except library.LibraryError as exc:
+        # The fresh EPUB may be identical (no new chapters) — not a failure.
+        record.title = book.title
+        _finish(db, record, str(exc))
+        return
+    record.title = book.title
+    _finish(db, record, "Updated with the latest chapters.")
+
+
+def _running_message(record: WebnovelImport, job: Job) -> str:
+    what = "Crawling chapters" if record.stage == "fetch" else "Building the EPUB"
+    return f"{what}… {job.progress}%"[:500]
+
+
+def _finish(db: Session, record: WebnovelImport, message: str) -> None:
+    record.state = "ready"
+    record.stage = "done"
+    record.job_id = None
+    _log(record, message)
+    db.commit()
+
+
+def _fail(db: Session, record: WebnovelImport, message: str) -> None:
+    record.state = "failed"
+    record.job_id = None
+    _log(record, message)
+    db.commit()
+
+
+def _log(record: WebnovelImport, message: str) -> None:
+    record.message = message[:500]
+    stamp = datetime.now(UTC).strftime("%H:%M")
+    lines = record.log.splitlines() if record.log else []
+    lines.append(f"{stamp} {message}")
+    record.log = "\n".join(lines[-_LOG_LINES:])[:4000]

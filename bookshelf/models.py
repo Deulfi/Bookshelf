@@ -181,3 +181,34 @@ class ReadingProgress(Base):
     device: Mapped[str] = mapped_column(String(200), default="")
     device_id: Mapped[str] = mapped_column(String(200), default="")
     timestamp: Mapped[int]  # unix seconds, as KOReader expects
+
+
+class WebnovelImport(Base):
+    """A web novel fetched from a remote lncrawl server (see ``services/webnovels.py``).
+
+    Tracks one crawl/render while it runs (shown with a status banner and log in the
+    Webnovels tab) and, once an EPUB has been imported, links to the resulting ``Book`` so
+    it can be refreshed with new chapters later. ``book_id`` is null until the first import
+    finishes; a refresh reuses the same row. Deleting the book removes this row too."""
+
+    __tablename__ = "webnovel_imports"
+    __table_args__ = (
+        UniqueConstraint("book_id"),
+        Index("ix_webnovel_imports_user", "user_id", "created_at", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    book_id: Mapped[int | None] = mapped_column(ForeignKey("books.id", ondelete="CASCADE"))
+    source_url: Mapped[str] = mapped_column(String(1000))
+    # lncrawl's novel id, learned once the crawl (fetch-novels) succeeds; needed to refresh.
+    novel_id: Mapped[str | None] = mapped_column(String(64))
+    # The lncrawl job currently being polled, if any.
+    job_id: Mapped[str | None] = mapped_column(String(64))
+    state: Mapped[str] = mapped_column(String(16), default="running")  # running | ready | failed
+    stage: Mapped[str] = mapped_column(String(16), default="fetch")  # fetch | render | done
+    title: Mapped[str] = mapped_column(String(500), default="")
+    message: Mapped[str] = mapped_column(String(500), default="")
+    log: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)

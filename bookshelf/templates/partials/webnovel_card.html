@@ -1,0 +1,29 @@
+<article class="card webnovel-item" id="webnovel-{{ item.id }}"{% if item.state == 'running' %} hx-get="/webnovels/{{ item.id }}/status" hx-trigger="every 30s" hx-target="this" hx-swap="outerHTML"{% endif %}>
+  <h2 class="webnovel-title">
+    {% if item.book_id %}<a class="link" href="/books/{{ item.book_id }}">{{ item.title }}</a>{% else %}{{ item.title }}{% endif %}
+  </h2>
+  <p class="muted small">
+    {% if item.state == 'running' %}{{ icon('sync', 14) }} Working
+    {%- elif item.state == 'ready' %}{{ icon('check', 14) }} Ready
+    {%- else %}{{ icon('x', 14) }} Failed{% endif %} · <span class="mono">{{ item.source_url }}</span>
+  </p>
+  {% if item.message %}<p class="small no-margin">{{ item.message }}</p>{% endif %}
+  {% if item.log %}
+  <details class="webnovel-log">
+    <summary class="muted small">Log</summary>
+    <pre class="small mono">{{ item.log }}</pre>
+  </details>
+  {% endif %}
+  {% if item.state != 'running' %}
+  <div class="actions">
+    {% if item.novel_id %}
+    <form method="post" action="/webnovels/{{ item.id }}/refresh">
+      <button class="btn" title="Fetch new chapters from the web source">{{ icon('sync', 16) }} Check for new chapters</button>
+    </form>
+    {% endif %}
+    <form method="post" action="/webnovels/{{ item.id }}/delete" data-confirm="Remove this web novel from the list? The book stays in your library.">
+      <button class="btn btn-danger">{{ icon('trash', 16) }} Remove</button>
+    </form>
+  </div>
+  {% endif %}
+</article>
