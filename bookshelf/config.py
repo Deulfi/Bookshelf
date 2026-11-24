@@ -50,6 +50,12 @@ class Settings:
     auth_header: str = "Remote-User"
     # IP addresses or networks of the proxies allowed to send ``auth_header`` (header mode).
     auth_proxies: tuple[str, ...] = ()
+    # Remote lncrawl server for web-novel ingestion (empty = the feature is disabled).
+    lncrawl_url: str = ""
+    # An lncrawl API token (see services.webnovels.mint_token or lncrawl's web UI).
+    lncrawl_token: str = ""
+    # Verify the lncrawl server's TLS certificate (set false for a self-signed LAN cert).
+    lncrawl_verify_tls: bool = True
 
     def __post_init__(self) -> None:
         if self.auth not in AUTH_MODES:
@@ -74,6 +80,9 @@ class Settings:
             timezone=os.environ.get("TZ", "UTC"),
             ingest_dir=_env_path("BOOKSHELF_INGEST_DIR"),
             scan_ignore=_env_list("BOOKSHELF_SCAN_IGNORE"),
+            lncrawl_url=os.environ.get("BOOKSHELF_LNCRAWL_URL", "").strip().rstrip("/"),
+            lncrawl_token=os.environ.get("BOOKSHELF_LNCRAWL_TOKEN", "").strip(),
+            lncrawl_verify_tls=_env_bool("BOOKSHELF_LNCRAWL_VERIFY_TLS", True),
         )
 
     @property
