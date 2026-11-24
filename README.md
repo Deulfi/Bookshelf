@@ -225,9 +225,11 @@ example `http://192.168.1.10:8080`), your username and your password, and turn o
   session log under the device name you gave Readest.
 
 With both on you do not also need *KOReader Sync* for the same book; it would only send the
-position a second time (harmless, but pointless). You can leave *Sync notes* and *Sync book
-states* on or off — Bookshelf has no BookOrbit highlight, bookmark or reading-status sync, so
-they do nothing here; turning them off just stops Readest from logging a failed sync for them.
+position a second time. That does no harm here: a progress sync just overwrites the one saved
+position (newest wins) and never creates a reading-session or log entry, so running both cannot
+clutter your session history. You can leave *Sync notes* and *Sync book states* on or off —
+Bookshelf has no BookOrbit highlight, bookmark or reading-status sync, so they do nothing here;
+turning them off just stops Readest from logging a failed sync for them.
 
 **OPDS catalog.** In the file browser, open *Search → OPDS catalog*, tap **+** and add
 `http://<your-server>:8080/opds` with your Bookshelf username and password.
