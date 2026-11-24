@@ -80,6 +80,8 @@
       <form method="post" action="/webnovels/{{ webnovel.id }}/refresh">
         <button class="btn" title="Fetch new chapters from the web source">{{ icon('sync', 18) }} Check for new chapters</button>
       </form>
+      {% elif not webnovel and request.app.state.settings.lncrawl_url %}
+      <button type="button" class="btn" data-dialog-open="link-dialog" title="Fetch updates for this book from a web-novel source">{{ icon('download', 18) }} Link web source</button>
       {% endif %}
       <form method="post" action="/books/{{ book.id }}/delete" data-confirm="Delete “{{ book.title }}”? This can’t be undone.">
         <button class="btn btn-danger">{{ icon('trash', 18) }} Delete</button>
@@ -175,6 +177,25 @@
     <footer class="dialog-foot">
       <button type="button" class="btn" data-dialog-close>Cancel</button>
       <button class="btn btn-primary">{{ icon('upload', 16) }} Replace</button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog id="link-dialog" class="dialog dialog-sm" aria-labelledby="link-title"{% if link_error %} data-open{% endif %}>
+  <form method="post" action="/books/{{ book.id }}/link" class="form">
+    <header class="dialog-head">
+      <h2 id="link-title">Link web source</h2>
+      <button type="button" class="icon-btn" data-dialog-close aria-label="Close">{{ icon('x') }}</button>
+    </header>
+    {{ alert(link_error) }}
+    <p class="muted small">Link this book to its page on a web-novel source. Bookshelf fetches the current version from lncrawl and can then update it with new chapters. This book's file is replaced with the fetched EPUB (the reading position carries over); if they match, nothing changes.</p>
+    <div class="field">
+      <label for="link-url">Novel URL</label>
+      <input class="input" id="link-url" name="url" type="url" inputmode="url" placeholder="https://…" required>
+    </div>
+    <footer class="dialog-foot">
+      <button type="button" class="btn" data-dialog-close>Cancel</button>
+      <button class="btn btn-primary">{{ icon('download', 16) }} Link</button>
     </footer>
   </form>
 </dialog>

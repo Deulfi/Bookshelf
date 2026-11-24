@@ -5,6 +5,7 @@
   <p class="muted small">
     {% if item.state == 'running' %}{{ icon('sync', 14) }} Working
     {%- elif item.state == 'ready' %}{{ icon('check', 14) }} Ready
+    {%- elif item.state == 'canceled' %}{{ icon('x', 14) }} Canceled
     {%- else %}{{ icon('x', 14) }} Failed{% endif %} · <span class="mono">{{ item.source_url }}</span>
   </p>
   {% if item.message %}<p class="small no-margin">{{ item.message }}</p>{% endif %}
@@ -14,16 +15,20 @@
     <pre class="small mono">{{ item.log }}</pre>
   </details>
   {% endif %}
-  {% if item.state != 'running' %}
   <div class="actions">
+    {% if item.state == 'running' %}
+    <form method="post" action="/webnovels/{{ item.id }}/cancel">
+      <button class="btn" title="Stop this fetch">{{ icon('x', 16) }} Cancel</button>
+    </form>
+    {% else %}
     {% if item.novel_id %}
     <form method="post" action="/webnovels/{{ item.id }}/refresh">
       <button class="btn" title="Fetch new chapters from the web source">{{ icon('sync', 16) }} Check for new chapters</button>
     </form>
     {% endif %}
-    <form method="post" action="/webnovels/{{ item.id }}/delete" data-confirm="Remove this web novel from the list? The book stays in your library.">
+    <form method="post" action="/webnovels/{{ item.id }}/delete" data-confirm="Remove this web novel from the list?{% if item.book_id %} The book stays in your library.{% endif %}">
       <button class="btn btn-danger">{{ icon('trash', 16) }} Remove</button>
     </form>
+    {% endif %}
   </div>
-  {% endif %}
 </article>

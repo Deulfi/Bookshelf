@@ -33,6 +33,22 @@ def _casefold(value: str | None) -> str | None:
     return value.casefold() if value is not None else None
 
 
+# 0-based spine item of a KOReader XPointer or EPUB CFI, mirroring
+# ``services.chapters.spine_index`` for use in SQL (the library's "finished" status).
+_XPOINTER_SPINE = re.compile(r"^/body/DocFragment\[(\d+)\]")
+_CFI_SPINE = re.compile(r"^epubcfi\(/6/(\d+)")
+
+
+def _spine_index(progress: str | None) -> int | None:
+    if not progress:
+        return None
+    if match := _XPOINTER_SPINE.match(progress):
+        return int(match.group(1)) - 1
+    if match := _CFI_SPINE.match(progress):
+        return int(match.group(1)) // 2 - 1
+    return None
+
+
 def make_engine(url: str) -> Engine:
     engine = create_engine(url, connect_args={"check_same_thread": False})
 
@@ -45,6 +61,8 @@ def make_engine(url: str) -> Engine:
         cursor.close()
         # Unicode-aware case folding for search and sorting (SQLite's LOWER() is ASCII-only).
         dbapi_connection.create_function("casefold", 1, _casefold, deterministic=True)
+        # Spine item of a reading position, for the chapter-aware "finished" status.
+        dbapi_connection.create_function("spine_index", 1, _spine_index, deterministic=True)
 
     return engine
 

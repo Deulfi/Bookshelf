@@ -18,7 +18,7 @@ from bookshelf.models import Book, User, WebnovelImport
 from bookshelf.services import webnovels
 from bookshelf.services.webnovels import Artifact, Job, JobStatus
 
-from .conftest import make_chapter_epub, make_epub
+from .conftest import make_chapter_epub, make_epub, upload
 
 URL = "https://novels.test/series/demo"
 
@@ -92,6 +92,9 @@ class FakeClient:
     def job(self, job_id: str) -> Job:
         return self.jobs[job_id]
 
+    def cancel_job(self, job_id: str) -> None:
+        self.submitted.append(("cancel", job_id))
+
     def latest_epub(self, novel_id: str) -> Artifact:
         return Artifact(
             novel_id=novel_id,
@@ -122,7 +125,8 @@ def configured_client(tmp_path: Path):
     settings = Settings(
         data_dir=tmp_path / "data",
         lncrawl_url="https://lncrawl.test",
-        lncrawl_token="tok",
+        lncrawl_username="admin",
+        lncrawl_password="secret",
     )
     with TestClient(create_app(settings)) as client:
         client.post(
@@ -320,6 +324,25 @@ def test_add_then_poll_renders_cards_and_imports(
         assert db.get(Book, record.book_id).title == "Polled Novel"
 
 
+def test_cancel_stops_a_running_import(
+    configured_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = FakeClient(make_epub(), {"job-fetch": _running("job-fetch", 10)})
+    _use(monkeypatch, fake)
+    app = configured_client.app
+    with app.state.sessionmaker() as db:
+        user = db.scalar(select(User))
+        rid = webnovels.start_import(db, app.state.settings, user, URL).id
+
+    resp = configured_client.post(f"/webnovels/{rid}/cancel", follow_redirects=False)
+    assert resp.status_code == 303
+    assert ("cancel", "job-fetch") in fake.submitted
+    with app.state.sessionmaker() as db:
+        record = db.get(WebnovelImport, rid)
+        assert record.state == "canceled"
+        assert record.job_id is None
+
+
 def test_add_empty_url_shows_an_error(configured_client: TestClient) -> None:
     response = configured_client.post("/webnovels", data={"url": ""}, follow_redirects=False)
     assert response.status_code == 422
@@ -340,6 +363,65 @@ def test_delete_removes_the_record_but_keeps_the_book(
     with configured_client.app.state.sessionmaker() as db:
         assert db.get(WebnovelImport, rid) is None
         assert db.get(Book, book_id) is not None
+
+
+def test_link_existing_book_enables_updates(
+    configured_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    book_id = upload(configured_client, "local.epub", make_epub(title="Local", series=None)).json()[
+        "id"
+    ]
+    fake = FakeClient(
+        make_chapter_epub("Local", 4),
+        {"job-fetch": _done("job-fetch", novel_id="nv9"), "job-render": _done("job-render")},
+    )
+    _use(monkeypatch, fake)
+
+    resp = configured_client.post(
+        f"/books/{book_id}/link", data={"url": URL}, follow_redirects=False
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/webnovels"
+
+    with configured_client.app.state.sessionmaker() as db:
+        rid = db.scalar(select(WebnovelImport.id).where(WebnovelImport.book_id == book_id))
+    record = _advance_to_done(configured_client, rid)
+    assert record.state == "ready"
+    assert record.book_id == book_id
+    assert record.novel_id == "nv9"
+    page = configured_client.get(f"/books/{book_id}").text
+    assert f"/webnovels/{rid}/refresh" in page
+
+
+def test_link_rejects_an_already_linked_book(
+    configured_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    book_id = upload(configured_client, "local.epub", make_epub(series=None)).json()["id"]
+    fake = FakeClient(make_epub(), {"job-fetch": _done("job-fetch", novel_id="nv1")})
+    _use(monkeypatch, fake)
+    first = configured_client.post(
+        f"/books/{book_id}/link", data={"url": URL}, follow_redirects=False
+    )
+    assert first.status_code == 303
+    second = configured_client.post(
+        f"/books/{book_id}/link", data={"url": URL}, follow_redirects=False
+    )
+    assert second.status_code == 422
+    assert "already linked" in second.text
+
+
+def test_link_empty_url_errors(configured_client: TestClient) -> None:
+    book_id = upload(configured_client, "local.epub", make_epub(series=None)).json()["id"]
+    resp = configured_client.post(
+        f"/books/{book_id}/link", data={"url": ""}, follow_redirects=False
+    )
+    assert resp.status_code == 422
+    assert "Enter a novel URL" in resp.text
+
+
+def test_book_page_offers_link_when_configured(configured_client: TestClient) -> None:
+    book_id = upload(configured_client, "local.epub", make_epub(series=None)).json()["id"]
+    assert 'data-dialog-open="link-dialog"' in configured_client.get(f"/books/{book_id}").text
 
 
 def test_book_page_shows_the_refresh_button(

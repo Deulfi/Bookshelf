@@ -19,7 +19,7 @@ router = APIRouter()
 
 
 def _configured(settings: AppSettings) -> bool:
-    return bool(settings.lncrawl_url and settings.lncrawl_token)
+    return bool(settings.lncrawl_url and settings.lncrawl_username and settings.lncrawl_password)
 
 
 def _page(
@@ -95,6 +95,15 @@ def refresh_webnovel(
         webnovels.start_refresh(db, settings, user, record)
     except webnovels.WebnovelError as exc:
         return _page(request, db, user, settings, error=str(exc), status_code=422)
+    return RedirectResponse("/webnovels", status_code=303)
+
+
+@router.post("/webnovels/{import_id}/cancel")
+def cancel_webnovel(db: DB, user: CurrentUser, settings: AppSettings, import_id: int) -> Response:
+    record = webnovels.get_import(db, user, import_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Web novel not found.")
+    webnovels.cancel_import(db, settings, user, record)
     return RedirectResponse("/webnovels", status_code=303)
 
 

@@ -123,7 +123,12 @@ ProgressHook = Callable[[Job], None]
 
 
 class WebnovelClient:
-    """A thin, synchronous REST client for one lncrawl server and one API token.
+    """A thin, synchronous REST client for one lncrawl server and one account.
+
+    lncrawl authenticates API calls with HTTP Basic (the account's username/email and
+    password); its short-lived "API tokens" are not accepted as bearer credentials. The
+    EPUB download is the exception: ``/static`` ignores the Authorization header and wants
+    a login token in the query string, so the client logs in for that one call.
 
     Holds an :class:`httpx.Client` (a connection pool), so close it when done —
     use it as a context manager, or keep one on ``app.state`` for the app's life.
@@ -132,15 +137,17 @@ class WebnovelClient:
     def __init__(
         self,
         base_url: str,
-        token: str,
+        username: str,
+        password: str,
         *,
         verify_tls: bool = True,
         timeout: float = 30.0,
     ) -> None:
-        self._token = token
+        self._username = username
+        self._password = password
         self._http = httpx.Client(
             base_url=base_url.rstrip("/"),
-            headers={"Authorization": f"Bearer {token}"},
+            auth=httpx.BasicAuth(username, password),
             verify=verify_tls,
             timeout=timeout,
             follow_redirects=True,
@@ -149,11 +156,12 @@ class WebnovelClient:
     @classmethod
     def from_settings(cls, settings: Settings) -> WebnovelClient | None:
         """Build a client from configuration, or None when the feature is unconfigured."""
-        if not settings.lncrawl_url or not settings.lncrawl_token:
+        if not (settings.lncrawl_url and settings.lncrawl_username and settings.lncrawl_password):
             return None
         return cls(
             settings.lncrawl_url,
-            settings.lncrawl_token,
+            settings.lncrawl_username,
+            settings.lncrawl_password,
             verify_tls=settings.lncrawl_verify_tls,
         )
 
@@ -202,6 +210,9 @@ class WebnovelClient:
     def job(self, job_id: str) -> Job:
         return Job.from_json(self._json("GET", f"/api/job/{job_id}"))
 
+    def cancel_job(self, job_id: str) -> None:
+        self._json("POST", f"/api/job/{job_id}/cancel")
+
     def wait_for_job(
         self,
         job_id: str,
@@ -241,13 +252,25 @@ class WebnovelClient:
             raise WebnovelError("The web-novel server produced no EPUB for this novel.")
         return max(epubs, key=lambda a: a.created_at)
 
+    def _login_token(self) -> str:
+        """A short-lived login token for the one endpoint (``/static``) that needs it."""
+        try:
+            resp = self._http.post(
+                "/api/auth/login", json={"email": self._username, "password": self._password}
+            )
+            resp.raise_for_status()
+            return resp.json()["token"]
+        except httpx.HTTPError as exc:
+            raise WebnovelError(f"Could not sign in to the web-novel server: {exc}.") from exc
+
     def download_epub(self, artifact: Artifact, dest: Path) -> Path:
         """Stream the EPUB to ``dest``. The /static guard reads the token from the query
-        string (the Authorization header is ignored there), so it is passed as a param."""
+        string (the Authorization header is ignored there), so a login token is passed."""
         dest.parent.mkdir(parents=True, exist_ok=True)
+        token = self._login_token()
         try:
             with self._http.stream(
-                "GET", f"/static/{artifact.output_file}", params={"token": self._token}
+                "GET", f"/static/{artifact.output_file}", params={"token": token}
             ) as resp:
                 resp.raise_for_status()
                 with dest.open("wb") as fh:
@@ -260,25 +283,6 @@ class WebnovelClient:
             dest.unlink(missing_ok=True)
             raise WebnovelError("The downloaded EPUB was incomplete; try again.")
         return dest
-
-
-def mint_token(base_url: str, email: str, password: str, *, verify_tls: bool = True) -> str:
-    """One-off helper to obtain an API token for BOOKSHELF_LNCRAWL_TOKEN from a login.
-
-    Run this once (or create a token in lncrawl's web UI) so Bookshelf stores a token
-    rather than the account password.
-    """
-    with httpx.Client(base_url=base_url.rstrip("/"), verify=verify_tls, timeout=30.0) as http:
-        login = http.post("/api/auth/login", json={"email": email, "password": password})
-        login.raise_for_status()
-        token = login.json()["token"]
-        created = http.post(
-            "/api/auth/me/create-token",
-            json={},
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        created.raise_for_status()
-        return created.json()["token"]
 
 
 # --- Orchestration (DB-backed; drives the two-step import and the refresh) ------------------
@@ -323,6 +327,26 @@ def delete_import(db: Session, record: WebnovelImport) -> None:
     db.commit()
 
 
+def cancel_import(
+    db: Session, settings: Settings, user: User, record: WebnovelImport
+) -> WebnovelImport:
+    """Stop a running fetch. Tells lncrawl to cancel the job (best effort) and marks it here."""
+    if record.state != "running":
+        return record
+    client = WebnovelClient.from_settings(settings)
+    if client is not None and record.job_id:
+        try:
+            with client:
+                client.cancel_job(record.job_id)
+        except WebnovelError:
+            pass  # cancel is best effort; mark it canceled locally regardless
+    record.state = "canceled"
+    record.job_id = None
+    _log(record, "Canceled.")
+    db.commit()
+    return record
+
+
 def start_import(db: Session, settings: Settings, user: User, url: str) -> WebnovelImport:
     """Submit a crawl for ``url`` and create the tracking row (state=running, stage=fetch)."""
     url = (url or "").strip()
@@ -340,6 +364,33 @@ def start_import(db: Session, settings: Settings, user: User, url: str) -> Webno
         stage="fetch",
     )
     _log(record, "Queued the crawl.")
+    db.add(record)
+    db.commit()
+    return record
+
+
+def link_book(db: Session, settings: Settings, user: User, book: Book, url: str) -> WebnovelImport:
+    """Link an existing book to a web source so it can be updated. Submits a crawl; when it
+    finishes, the book's file is replaced with lncrawl's EPUB (or left as-is if identical), and
+    the book gains a novel id for future refreshes. Transferred web novels resume this way."""
+    url = (url or "").strip()
+    if not url:
+        raise WebnovelError("Enter a novel URL.")
+    if for_book(db, user, book.id) is not None:
+        raise WebnovelError("This book is already linked to a web source.")
+    client = _client_or_error(settings)
+    with client:
+        job_id = client.submit_fetch(url)
+    record = WebnovelImport(
+        user_id=user.id,
+        book_id=book.id,
+        source_url=url,
+        title=book.title,
+        job_id=job_id,
+        state="running",
+        stage="fetch",
+    )
+    _log(record, "Linking to the web source.")
     db.add(record)
     db.commit()
     return record

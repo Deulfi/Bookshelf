@@ -176,6 +176,7 @@ def _render_book(
     error: str | None = None,
     progress_error: str | None = None,
     replace_error: str | None = None,
+    link_error: str | None = None,
 ) -> Response:
     stats = reading_stats.book_stats(
         reading_stats.statistics_path(storage, user.id),
@@ -187,6 +188,9 @@ def _render_book(
     if stats and entry.status == "reading":
         seconds_left = stats.seconds_left(entry.progress.percentage)
     outline = chapters.outline_of(storage, entry.book)
+    if outline is not None and entry.book.spine_length != outline.spine_length:
+        entry.book.spine_length = outline.spine_length  # backfill / keep fresh for "finished"
+        db.commit()
     chapter = None
     if entry.progress is not None and outline is not None:
         index = chapters.spine_index(entry.progress.progress)
@@ -195,7 +199,7 @@ def _render_book(
     return render(
         request,
         "book.html",
-        status_code=422 if error or progress_error or replace_error else 200,
+        status_code=422 if error or progress_error or replace_error or link_error else 200,
         user=user,
         nav="library",
         entry=entry,
@@ -210,6 +214,7 @@ def _render_book(
         error=error,
         progress_error=progress_error,
         replace_error=replace_error,
+        link_error=link_error,
         **_sessions_page(request, db, storage, user, entry.book, offset=0),
     )
 
@@ -376,6 +381,25 @@ def replace_book_file(
         entry = _entry_or_404(db, user, book_id)
         return _render_book(request, db, storage, user, entry, replace_error=str(exc))
     return RedirectResponse(f"/books/{book_id}", status_code=303)
+
+
+@router.post("/books/{book_id}/link")
+def link_book_source(
+    request: Request,
+    db: DB,
+    user: CurrentUser,
+    storage: AppStorage,
+    settings: AppSettings,
+    book_id: int,
+    url: Annotated[str, Form()] = "",
+) -> Response:
+    """Link an existing book to a web-novel source (book page, "Link web source")."""
+    entry = _entry_or_404(db, user, book_id)
+    try:
+        webnovels.link_book(db, settings, user, entry.book, url)
+    except webnovels.WebnovelError as exc:
+        return _render_book(request, db, storage, user, entry, link_error=str(exc))
+    return RedirectResponse("/webnovels", status_code=303)
 
 
 @router.post("/books/{book_id}/device")

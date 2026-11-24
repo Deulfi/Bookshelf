@@ -52,8 +52,9 @@ class Settings:
     auth_proxies: tuple[str, ...] = ()
     # Remote lncrawl server for web-novel ingestion (empty = the feature is disabled).
     lncrawl_url: str = ""
-    # An lncrawl API token (see services.webnovels.mint_token or lncrawl's web UI).
-    lncrawl_token: str = ""
+    # lncrawl account Bookshelf signs in as (HTTP Basic); the admin account works.
+    lncrawl_username: str = ""
+    lncrawl_password: str = ""
     # Verify the lncrawl server's TLS certificate (set false for a self-signed LAN cert).
     lncrawl_verify_tls: bool = True
 
@@ -81,7 +82,8 @@ class Settings:
             ingest_dir=_env_path("BOOKSHELF_INGEST_DIR"),
             scan_ignore=_env_list("BOOKSHELF_SCAN_IGNORE"),
             lncrawl_url=os.environ.get("BOOKSHELF_LNCRAWL_URL", "").strip().rstrip("/"),
-            lncrawl_token=os.environ.get("BOOKSHELF_LNCRAWL_TOKEN", "").strip(),
+            lncrawl_username=os.environ.get("BOOKSHELF_LNCRAWL_USERNAME", "").strip(),
+            lncrawl_password=os.environ.get("BOOKSHELF_LNCRAWL_PASSWORD", ""),
             lncrawl_verify_tls=_env_bool("BOOKSHELF_LNCRAWL_VERIFY_TLS", True),
         )
 

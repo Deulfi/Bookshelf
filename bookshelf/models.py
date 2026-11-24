@@ -84,6 +84,9 @@ class Book(Base):
     partial_md5: Mapped[str] = mapped_column(String(32), index=True)
     filename_md5: Mapped[str] = mapped_column(String(32), index=True)
     has_cover: Mapped[bool] = mapped_column(default=False)
+    # Number of spine items (≈ chapters) in an EPUB; lets long books (web novels) be marked
+    # "finished" only in the last chapter, not at a fixed percentage. None until computed.
+    spine_length: Mapped[int | None]
     # When the book was marked for syncing to e-readers (OPDS /opds/sync); None = not marked.
     device_sync_at: Mapped[datetime | None]
 

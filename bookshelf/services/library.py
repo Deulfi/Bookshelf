@@ -17,13 +17,16 @@ from ..db import utcnow
 from ..formats import detect_format
 from ..models import Book, ReadingProgress, User
 from ..storage import Storage
-from . import covers, progress, reading_stats
+from . import chapters, covers, progress, reading_stats
 from .hashing import filename_md5, partial_md5
 from .metadata import extract_metadata
 
 STATUSES = ("all", "reading", "unread", "finished")
 SORTS = ("recent", "title", "author", "last_read")
 FINISHED_THRESHOLD = 0.98
+# Books with at least this many spine items (≈ chapters) — web novels — are "finished" only
+# when the position is in the last chapter, not merely past FINISHED_THRESHOLD by percentage.
+LONG_BOOK_SPINE = 50
 CONTINUE_READING_LIMIT = 8
 _COPY_CHUNK = 1024 * 1024
 # Files modified more recently than this are still being written (sync tools, copies).
@@ -59,7 +62,14 @@ class BookEntry:
     def status(self) -> str:
         if self.progress is None or self.progress.percentage <= 0:
             return "unread"
-        return "finished" if self.progress.percentage >= FINISHED_THRESHOLD else "reading"
+        if self.progress.percentage < FINISHED_THRESHOLD:
+            return "reading"
+        total = self.book.spine_length
+        if total and total >= LONG_BOOK_SPINE:
+            index = chapters.spine_index(self.progress.progress)
+            if index is not None and index < total - 1:
+                return "reading"  # a long book is finished only in its last chapter
+        return "finished"
 
     @property
     def last_read(self) -> datetime | None:
@@ -129,6 +139,7 @@ def import_book(
         db.flush()  # assigns book.id for the cover file name
         if metadata.cover:
             book.has_cover = covers.save_cover(metadata.cover, storage.cover_path(book.id))
+        book.spine_length = _spine_length(storage, book)
         db.commit()
         return book
     except BaseException:
@@ -138,6 +149,12 @@ def import_book(
         raise
     finally:
         temp_path.unlink(missing_ok=True)
+
+
+def _spine_length(storage: Storage, book: Book) -> int | None:
+    """Spine item count (≈ chapters) of an EPUB, for the long-book "finished" rule."""
+    outline = chapters.outline_of(storage, book)
+    return outline.spine_length if outline else None
 
 
 def replace_file(
@@ -174,6 +191,8 @@ def replace_file(
             document_hash=document_hash,
             filename=filename,
         )
+        book.spine_length = _spine_length(storage, book)
+        db.commit()
         return book
     finally:
         temp_path.unlink(missing_ok=True)
@@ -466,8 +485,16 @@ _by_name = aliased(ReadingProgress, name="progress_by_name")
 _name_is_newer = _by_name.timestamp > func.coalesce(_by_hash.timestamp, -1)
 _percentage = case((_name_is_newer, _by_name.percentage), else_=_by_hash.percentage)
 _last_read = case((_name_is_newer, _by_name.timestamp), else_=_by_hash.timestamp)
+_progress = case((_name_is_newer, _by_name.progress), else_=_by_hash.progress)
+# A long book (web novel) is "finished" only in its last spine item, not at a fixed percentage;
+# ``spine_index`` is a SQLite function registered in db.py (NULL for unparseable positions).
+_long_unfinished = and_(
+    Book.spine_length >= LONG_BOOK_SPINE,
+    func.spine_index(_progress) < Book.spine_length - 1,
+)
 _status = case(
     (func.coalesce(_percentage, 0) <= 0, "unread"),
+    (and_(_percentage >= FINISHED_THRESHOLD, _long_unfinished), "reading"),
     (_percentage >= FINISHED_THRESHOLD, "finished"),
     else_="reading",
 )
