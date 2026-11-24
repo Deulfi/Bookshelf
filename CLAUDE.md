@@ -115,7 +115,8 @@ scripts/dev_seed.py  demo data for local development
   patterns (`<…response…>`, `<…href…>`, `<…collection…>`) and syncs with GET + ETag, then PUT with
   `If-Match` (412 on mismatch). Keep hrefs as absolute paths and keep the store flat.
 - **BookOrbit API subset** (`routers/bookorbit.py`): Readest's BookOrbit integration calls
-  `/api/v1/koreader/users/auth`, `plugin/match-check` and `plugin/page-stats` with KOSync headers.
+  `/api/v1/koreader/users/auth`, `syncs/progress` (reused kosync handlers), `plugin/match-check`
+  and `plugin/page-stats` with KOSync headers.
   Keep the camelCase JSON shapes, answer every well-formed hash as matched (otherwise Readest
   warns on every book) and keep page events idempotent: Readest re-sends a chunk after a failure.
   Unknown `plugin/` routes must stay 404, which Readest reads as "feature not supported".

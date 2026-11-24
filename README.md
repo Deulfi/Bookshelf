@@ -215,13 +215,19 @@ Bookshelf username and password. Keep the default document matching (*Binary*).
 login; in Readest, look for *KOReader Sync* in a book's menu. Positions are shared with the
 [web reader](#web-reader) too.
 
-**Readest reading time.** Readest sends its reading statistics through its *BookOrbit*
-integration, and Bookshelf understands that part of BookOrbit's API. Keep *KOReader Sync* for
-positions and add the BookOrbit integration next to it (in Readest's integration settings) with
-your Bookshelf address (no path, for example `http://192.168.1.10:8080`), username and password.
-Switch on only *Sync stats*: Bookshelf has no BookOrbit highlight, bookmark or reading-status sync,
-and *Sync progress* there would only send each position twice. Readest's time then appears in the
-statistics and in a book's session log, under the device name you gave Readest.
+**Readest (BookOrbit integration).** Readest can also sync through its *BookOrbit* integration,
+and Bookshelf understands the progress and reading-statistics parts of BookOrbit's API. In
+Readest's integration settings add a BookOrbit server with your Bookshelf address (no path, for
+example `http://192.168.1.10:8080`), your username and your password, and turn on:
+
+- **Sync progress** — your reading position, shared with KOReader and the [web reader](#web-reader).
+- **Sync stats** — Readest's reading time, which then shows in the statistics and in a book's
+  session log under the device name you gave Readest.
+
+With both on you do not also need *KOReader Sync* for the same book; it would only send the
+position a second time (harmless, but pointless). You can leave *Sync notes* and *Sync book
+states* on or off — Bookshelf has no BookOrbit highlight, bookmark or reading-status sync, so
+they do nothing here; turning them off just stops Readest from logging a failed sync for them.
 
 **OPDS catalog.** In the file browser, open *Search → OPDS catalog*, tap **+** and add
 `http://<your-server>:8080/opds` with your Bookshelf username and password.
