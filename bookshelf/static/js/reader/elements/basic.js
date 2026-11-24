@@ -150,14 +150,35 @@ export const fullscreen = {
     icon: 'maximize',
     options: [showLabel],
     create(ctx, o) {
+        // iOS Safari/WebKit has no element fullscreen, so the button renders nothing there;
+        // on iOS the install-to-home-screen PWA is the way to lose the browser chrome.
         if (!document.fullscreenEnabled) return null
-        return {
-            el: ctx.ui.button(ctx, {
-                icon: o.icon || 'maximize', label: o.label || 'Full screen', showLabel: o.showLabel,
-                onClick: () => document.fullscreenElement
-                    ? document.exitFullscreen()
-                    : document.documentElement.requestFullscreen().catch(() => {}),
-            }),
+        const label = o.label || 'Full screen'
+        const el = ctx.ui.button(ctx, {
+            icon: o.icon || 'maximize', label, showLabel: o.showLabel,
+            onClick: () => document.fullscreenElement
+                ? document.exitFullscreen()
+                : document.documentElement.requestFullscreen().catch(() => {}),
+        })
+        const labelEl = el.querySelector('.rb-btn-label')
+        let iconEl = el.querySelector('svg')
+        // Reflect the state: the icon, label and aria-pressed follow full screen on and off,
+        // however it was toggled (the button, a shortcut, or the browser leaving full screen).
+        const sync = () => {
+            const active = Boolean(document.fullscreenElement)
+            const text = active ? 'Exit full screen' : label
+            el.title = text
+            el.setAttribute('aria-label', text)
+            el.setAttribute('aria-pressed', String(active))
+            if (labelEl) labelEl.textContent = text
+            if (!o.icon) {
+                const next = ctx.icon(active ? 'minimize' : 'maximize')
+                iconEl.replaceWith(next)
+                iconEl = next
+            }
         }
+        document.addEventListener('fullscreenchange', sync)
+        sync()
+        return { el, destroy: () => document.removeEventListener('fullscreenchange', sync) }
     },
 }
