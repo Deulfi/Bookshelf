@@ -87,8 +87,8 @@ Open <http://localhost:8080> and create the administrator account. Adjust the po
 settings in `.env`; `docker-compose.yml` never needs local changes.
 
 To update, run `docker compose pull && docker compose up -d`. `:latest` is the newest release;
-pin a version with `image: ghcr.io/deulfi/bookshelf:0.3` (or `:0.3.4`) instead. Test builds are
-published as pre-releases (`:0.3.5-beta.1` and `:beta`) and never move `:latest`.
+pin a version with `image: ghcr.io/deulfi/bookshelf:0.3` (or `:0.3.5`) instead. Test builds are
+published as pre-releases (`:0.3.6-beta.1` and `:beta`) and never move `:latest`.
 
 Before an update changes the database, Bookshelf copies it to `/data/backups/`. Delete old copies
 there whenever you like.
