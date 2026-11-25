@@ -199,6 +199,26 @@ def test_a_running_crawl_reports_progress_and_submits_nothing_more(
     assert fake.submitted == [("fetch", URL)]
 
 
+def test_a_transient_timeout_keeps_the_import_running(
+    configured_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A busy/unreachable lncrawl must not fail a crawl it is finishing fine — it retries."""
+
+    class FlakyClient(FakeClient):
+        def job(self, job_id: str) -> Job:
+            raise webnovels.WebnovelUnavailable("the read operation timed out")
+
+    fake = FlakyClient(make_epub(), {})
+    _use(monkeypatch, fake)
+    app = configured_client.app
+    with app.state.sessionmaker() as db:
+        user = db.scalar(select(User))
+        record = webnovels.start_import(db, app.state.settings, user, URL)
+        webnovels.advance(db, app.state.storage, app.state.settings, user, record)
+        assert record.state == "running"  # not failed
+        assert "retry" in record.message.lower()
+
+
 def test_a_blocked_source_marks_the_import_failed(
     configured_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

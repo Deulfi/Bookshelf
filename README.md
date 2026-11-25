@@ -118,6 +118,7 @@ Set these in `.env` (see [.env.example](.env.example)). All of them are optional
 | `BOOKSHELF_LNCRAWL_USERNAME` | *(empty)* | lncrawl account to sign in as (its admin account works) |
 | `BOOKSHELF_LNCRAWL_PASSWORD` | *(empty)* | Password for that lncrawl account |
 | `BOOKSHELF_LNCRAWL_VERIFY_TLS` | `true` | Verify the lncrawl server's TLS certificate (`false` for a self-signed one) |
+| `BOOKSHELF_LNCRAWL_TIMEOUT` | `60` | Seconds to wait for the lncrawl server (raise it if large crawls time out) |
 | `TZ` | `UTC` | Time zone for reading statistics, e.g. `Europe/Berlin` |
 
 When running without Docker Compose, `BOOKSHELF_DATA_DIR` (default `./data`, `/data` in the

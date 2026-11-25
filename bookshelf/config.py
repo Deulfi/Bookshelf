@@ -57,6 +57,8 @@ class Settings:
     lncrawl_password: str = ""
     # Verify the lncrawl server's TLS certificate (set false for a self-signed LAN cert).
     lncrawl_verify_tls: bool = True
+    # Seconds to wait for the lncrawl server; a busy lncrawl (mid-crawl) can be slow to answer.
+    lncrawl_timeout: int = 60
 
     def __post_init__(self) -> None:
         if self.auth not in AUTH_MODES:
@@ -85,6 +87,7 @@ class Settings:
             lncrawl_username=os.environ.get("BOOKSHELF_LNCRAWL_USERNAME", "").strip(),
             lncrawl_password=os.environ.get("BOOKSHELF_LNCRAWL_PASSWORD", ""),
             lncrawl_verify_tls=_env_bool("BOOKSHELF_LNCRAWL_VERIFY_TLS", True),
+            lncrawl_timeout=int(os.environ.get("BOOKSHELF_LNCRAWL_TIMEOUT", "60")),
         )
 
     @property

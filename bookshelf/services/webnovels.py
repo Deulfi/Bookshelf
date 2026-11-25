@@ -57,6 +57,14 @@ class WebnovelJobError(WebnovelError):
     """An lncrawl job did not reach SUCCESS (often: the source blocked the crawl)."""
 
 
+class WebnovelUnavailable(WebnovelError):
+    """A transient failure to reach lncrawl (timeout, connection): worth retrying, not fatal.
+
+    Raised instead of :class:`WebnovelError` when the server could not be reached at all, so a
+    busy lncrawl (slow to answer while crawling) does not turn a poll into a permanent failure.
+    """
+
+
 class JobStatus(IntEnum):
     PENDING = 0
     RUNNING = 1
@@ -141,7 +149,7 @@ class WebnovelClient:
         password: str,
         *,
         verify_tls: bool = True,
-        timeout: float = 30.0,
+        timeout: float = 60.0,
     ) -> None:
         self._username = username
         self._password = password
@@ -163,6 +171,7 @@ class WebnovelClient:
             settings.lncrawl_username,
             settings.lncrawl_password,
             verify_tls=settings.lncrawl_verify_tls,
+            timeout=settings.lncrawl_timeout,
         )
 
     def close(self) -> None:
@@ -186,7 +195,7 @@ class WebnovelClient:
                 f"The web-novel server rejected the request ({exc.response.status_code})."
             ) from exc
         except httpx.HTTPError as exc:
-            raise WebnovelError(f"Could not reach the web-novel server: {exc}.") from exc
+            raise WebnovelUnavailable(f"Could not reach the web-novel server: {exc}.") from exc
 
     # -- submitting jobs ----------------------------------------------------------------------
 
@@ -260,8 +269,12 @@ class WebnovelClient:
             )
             resp.raise_for_status()
             return resp.json()["token"]
+        except httpx.HTTPStatusError as exc:
+            raise WebnovelError(
+                f"The web-novel server rejected the sign-in ({exc.response.status_code})."
+            ) from exc
         except httpx.HTTPError as exc:
-            raise WebnovelError(f"Could not sign in to the web-novel server: {exc}.") from exc
+            raise WebnovelUnavailable(f"Could not sign in to the web-novel server: {exc}.") from exc
 
     def download_epub(self, artifact: Artifact, dest: Path) -> Path:
         """Stream the EPUB to ``dest``. The /static guard reads the token from the query
@@ -276,9 +289,14 @@ class WebnovelClient:
                 with dest.open("wb") as fh:
                     for chunk in resp.iter_bytes(1024 * 64):
                         fh.write(chunk)
+        except httpx.HTTPStatusError as exc:
+            dest.unlink(missing_ok=True)
+            raise WebnovelError(
+                f"The web-novel server rejected the download ({exc.response.status_code})."
+            ) from exc
         except httpx.HTTPError as exc:
             dest.unlink(missing_ok=True)
-            raise WebnovelError(f"Could not download the EPUB: {exc}.") from exc
+            raise WebnovelUnavailable(f"Could not download the EPUB: {exc}.") from exc
         if artifact.file_size and dest.stat().st_size != artifact.file_size:
             dest.unlink(missing_ok=True)
             raise WebnovelError("The downloaded EPUB was incomplete; try again.")
@@ -439,6 +457,11 @@ def advance(
                 _after_fetch(db, record, client, job)
             else:
                 _ingest(db, storage, settings, user, record, client)
+    except WebnovelUnavailable:
+        # A busy or briefly unreachable lncrawl: leave the import running and retry next poll,
+        # rather than failing a crawl that lncrawl is finishing fine.
+        record.message = "Lost contact with the web-novel server; will retry."
+        db.commit()
     except WebnovelError as exc:
         _fail(db, record, str(exc))
     return record
