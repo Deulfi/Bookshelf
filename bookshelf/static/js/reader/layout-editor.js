@@ -31,7 +31,7 @@ function fromConfig(config) {
     return {
         top: normalize(config.top),
         bottom: normalize(config.bottom),
-        autohide: { enabled: true, delayMs: 3500, tapZone: 0.18, ...config.autohide },
+        autohide: { enabled: true, delayMs: 3500, tapZone: 0.18, immersive: true, ...config.autohide },
         chapterFlow: { overscrollPx: 160, ...config.chapterFlow },
     }
 }
@@ -265,7 +265,7 @@ export async function mountLayoutEditor(root, {
         const { autohide, chapterFlow } = layout
         const range = (section, key, fallback) => limits[section]?.[key] ?? fallback
         const [delayMin, delayMax] = range('autohide', 'delayMs', [500, 60000])
-        const [zoneMin, zoneMax] = range('autohide', 'tapZone', [0.05, 0.45])
+        const [zoneMin, zoneMax] = range('autohide', 'tapZone', [0.05, 0.5])
         const [overMin, overMax] = range('chapterFlow', 'overscrollPx', [20, 2000])
         const uid = compact ? `le-${instance}` : 'le-reader'
         const number = (section, key, scale = 1) => e => {
@@ -279,6 +279,10 @@ export async function mountLayoutEditor(root, {
                 h('input', { type: 'checkbox', checked: autohide.enabled !== false,
                     onchange: e => { autohide.enabled = e.target.checked; markDirty() } }),
                 'Hide the bars automatically'),
+            h('label', { class: 'le-option le-option-inline' },
+                h('input', { type: 'checkbox', checked: autohide.immersive !== false,
+                    onchange: e => { autohide.immersive = e.target.checked; markDirty() } }),
+                'Full screen while reading (phones and installed app)'),
             h('div', { class: 'le-option' }, h('label', { for: `${uid}-delay` }, 'Hide after (seconds)'),
                 h('input', { class: 'input', id: `${uid}-delay`, type: 'number', min: delayMin / 1000, max: delayMax / 1000, step: 0.5,
                     value: (autohide.delayMs ?? 3500) / 1000, oninput: number('autohide', 'delayMs', 1000) })),

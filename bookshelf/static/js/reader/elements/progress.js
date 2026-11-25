@@ -28,6 +28,99 @@ export const progressBar = {
     },
 }
 
+// A compact percent button that opens the book progress slider in a small popover above the bar.
+// On a narrow portrait phone an inline slider is cramped between the chapter buttons; this keeps
+// the bar tidy and gives the slider the whole width only when you actually want to seek — the way
+// Readest does it. Built for the bottom bar (the popover opens upward); in the top bar it opens
+// downward (CSS). The popover holds the bars open while it is up, so the auto-hide cannot snatch
+// the slider away mid-drag.
+export const progressPopover = {
+    id: 'progress-popover',
+    label: 'Progress button',
+    description: 'A percent button that opens the progress slider in a popover (good on phones)',
+    options: [
+        { key: 'showChapters', type: 'toggle', label: 'Show chapters (small lines)', default: false },
+    ],
+    create(ctx, o) {
+        const wrap = document.createElement('div')
+        wrap.className = 'rb-pop-wrap'
+
+        const btn = document.createElement('button')
+        btn.type = 'button'
+        btn.className = 'rb-btn rb-pop-btn'
+        btn.setAttribute('aria-label', 'Reading position')
+        btn.setAttribute('aria-expanded', 'false')
+        const value = ctx.ui.text('rb-percent')
+        value.textContent = ctx.ui.percent(0)
+        btn.append(value)
+
+        const pop = document.createElement('div')
+        pop.className = 'rb-pop'
+        pop.hidden = true
+        const slider = ctx.ui.slider({
+            label: 'Position in book',
+            onSeek: (fraction, done) => done && ctx.engine.goToFraction(fraction),
+        })
+        if (o.showChapters) {
+            const input = slider.el.querySelector('input')
+            const track = document.createElement('span')
+            track.className = 'rb-track'
+            input.replaceWith(track)
+            track.append(input)
+            chapterTicks(ctx, track, true)
+        }
+        pop.append(slider.el)
+        wrap.append(btn, pop)
+
+        let onOutside = null
+        const close = () => {
+            if (pop.hidden) return
+            pop.hidden = true
+            btn.setAttribute('aria-expanded', 'false')
+            if (onOutside) {
+                document.removeEventListener('pointerdown', onOutside, true)
+                onOutside = null
+            }
+            ctx.bars?.show() // resume the normal auto-hide
+        }
+        const open = () => {
+            if (!pop.hidden) return
+            pop.hidden = false
+            btn.setAttribute('aria-expanded', 'true')
+            ctx.bars?.show(false) // keep the bars up while the slider is out
+            onOutside = event => {
+                if (!wrap.contains(event.target)) close()
+            }
+            document.addEventListener('pointerdown', onOutside, true)
+        }
+        btn.addEventListener('click', () => (pop.hidden ? open() : close()))
+        pop.addEventListener('keydown', event => {
+            if (event.key === 'Escape') {
+                close()
+                btn.focus()
+            }
+        })
+        // If the bars leave for any other reason (a tap in the page, Escape, a panel), the
+        // popover goes with them instead of floating over the text.
+        const observer = new MutationObserver(() => {
+            if (!document.body.classList.contains('bars-visible')) close()
+        })
+        observer.observe(document.body, { attributes: true, attributeFilter: ['class'] })
+
+        return {
+            el: wrap,
+            update(location) {
+                value.textContent = ctx.ui.percent(location.fraction)
+                slider.set(location.fraction)
+            },
+            destroy() {
+                close()
+                observer.disconnect()
+            },
+        }
+    },
+}
+
 export const progressText = {
     id: 'progress-text',
     label: 'Book progress (text)',

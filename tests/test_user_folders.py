@@ -46,6 +46,19 @@ def test_upload_is_stored_as_author_series_title(admin_client: TestClient) -> No
     assert admin_client.get(f"/books/{book_id}/file").status_code == 200
 
 
+def test_series_equal_to_the_title_is_not_a_series(admin_client: TestClient) -> None:
+    # lightnovel-crawler EPUBs set calibre:series to the book's own title with no volume number;
+    # that is not a real series and must not add a redundant folder level.
+    data = make_epub(
+        title="Might As Well", author="Kecskepasztor", series="Might As Well", series_index=None
+    )
+    book_id = upload(admin_client, "novel.epub", data).json()["id"]
+    with admin_client.app.state.sessionmaker() as db:
+        book = db.get(Book, book_id)
+        assert book.series is None
+        assert book.file_path == "Kecskepasztor/Might As Well/Might As Well.epub"
+
+
 def test_scan_imports_files_dropped_into_the_users_folder(admin_client: TestClient) -> None:
     _wait_for_scanner(admin_client)
     admin = _user(admin_client, "admin")

@@ -120,6 +120,10 @@ class Storage:
         directory structure, which also reads the volume number from "Vol 2 - Title")."""
         name = self._clean_segment(title) or "book"
         series_name = self._clean_segment(series)
+        # A series named exactly like the book, with no volume number, is just a redundant folder
+        # level (Author/Title/Title/Title.ext); treat it as no series at all.
+        if series_name == name and series_index is None:
+            series_name = ""
         folder = name
         if series_name and series_index is not None:
             number = int(series_index) if float(series_index).is_integer() else series_index

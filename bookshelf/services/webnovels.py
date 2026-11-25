@@ -394,8 +394,15 @@ def link_book(db: Session, settings: Settings, user: User, book: Book, url: str)
     url = (url or "").strip()
     if not url:
         raise WebnovelError("Enter a novel URL.")
-    if for_book(db, user, book.id) is not None:
-        raise WebnovelError("This book is already linked to a web source.")
+    existing = for_book(db, user, book.id)
+    if existing is not None:
+        # A live link (running, or already attached to a novel) must not be clobbered. A leftover
+        # from a link that never worked (failed/canceled, no novel id) is just noise: drop it so
+        # the user can try again instead of being told the book is "already linked".
+        if existing.state == "running" or existing.novel_id:
+            raise WebnovelError("This book is already linked to a web source.")
+        db.delete(existing)
+        db.flush()
     client = _client_or_error(settings)
     with client:
         job_id = client.submit_fetch(url)

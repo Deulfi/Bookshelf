@@ -158,6 +158,12 @@ def test_layout_is_one_folder_per_book_like_audiobookshelf(env):
     assert path("A", "S", "No Number", "epub") == "A/S/No Number/No Number.epub"
     assert path("A", None, "Alone", "pdf", 3) == "A/Alone/Alone.pdf"
     assert path(None, None, "Anonymous", "epub") == "Anonymous/Anonymous.epub"
+    # A series named like the book with no volume number is redundant, not a real series.
+    assert path("Kecskepasztor", "Might As Well", "Might As Well", "epub") == (
+        "Kecskepasztor/Might As Well/Might As Well.epub"
+    )
+    # ...but with a volume number it is kept (e.g. Dune #1 titled "Dune").
+    assert path("F. Herbert", "Dune", "Dune", "epub", 1) == "F. Herbert/Dune/Vol 1 - Dune/Dune.epub"
 
 
 def test_path_segments_cannot_escape_the_library(env):

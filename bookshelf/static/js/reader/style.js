@@ -74,6 +74,9 @@ export function rendererAttributes(prefs) {
 export function applyChromeTheme(theme) {
     const root = document.documentElement
     const body = document.body // .reader-page declares the fallbacks, so override them there
+    // Theme <html> as well, not just the body: in a standalone PWA the area behind the phone's
+    // gesture bar / bottom safe-area shows the root background, which would otherwise be white.
+    root.style.background = theme.bg
     body.style.setProperty('--reader-bg', theme.bg)
     body.style.setProperty('--reader-fg', theme.fg)
     body.style.setProperty('--reader-accent', theme.accent ?? theme.link ?? theme.fg)

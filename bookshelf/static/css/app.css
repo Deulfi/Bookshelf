@@ -48,7 +48,9 @@
 /* ---------- Base ---------- */
 
 *, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+/* Background on <html>, not just <body>: in a standalone PWA the area behind the phone's
+   gesture bar / bottom safe-area shows the root background, which would otherwise be white. */
+html { -webkit-text-size-adjust: 100%; background: var(--bg); }
 body {
   margin: 0;
   min-height: 100vh;
@@ -81,6 +83,9 @@ strong { font-weight: 650; }
   position: sticky;
   top: 0;
   z-index: 20;
+  /* With viewport-fit=cover the page runs under the status bar; let the top bar's own
+     background fill that strip so it stays themed (not white) in a standalone PWA. */
+  padding-top: env(safe-area-inset-top);
   background: color-mix(in srgb, var(--bg) 82%, transparent);
   backdrop-filter: saturate(1.4) blur(14px);
   -webkit-backdrop-filter: saturate(1.4) blur(14px);
@@ -769,12 +774,16 @@ code:not(.copy-value) { padding: 1px 6px; border-radius: 6px; background: var(--
   .select { flex: 1; }
   .continue-row { margin: 0 -16px 32px; padding: 2px 16px 10px; grid-auto-columns: minmax(260px, 82vw); }
   .series-row { margin: 0 -16px; padding: 12px 16px 8px; grid-auto-columns: 68px; }
-  .book-detail { grid-template-columns: 1fr; gap: 28px; }
+  /* minmax(0, …), not 1fr: a long unbreakable label (e.g. a web novel's chapter title, which is
+     white-space: nowrap) must not stretch the column past the viewport and force a desktop-width
+     zoom-out on the phone. */
+  .book-detail { grid-template-columns: minmax(0, 1fr); gap: 28px; }
   .detail-cover { position: static; width: min(200px, 55vw); margin: 0 auto; }
-  .detail-info { text-align: left; }
+  .detail-info { text-align: left; min-width: 0; }
   .form-row { grid-template-columns: minmax(0, 1fr) 96px; }
-  .actions { display: grid; grid-template-columns: 1fr 1fr; }
-  .actions form, .actions .btn { width: 100%; }
+  .actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .actions form, .actions .btn { width: 100%; min-width: 0; }
+  .actions .btn { white-space: normal; }  /* let a long button label wrap instead of overflowing */
   .btn-copy span { display: none; }
   .setting-row > form:has(.setting-control), .btn.setting-control, .select.setting-control { width: 100%; }
   .setting-inline { width: 100%; }

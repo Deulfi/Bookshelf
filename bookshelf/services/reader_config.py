@@ -43,7 +43,7 @@ KEYED_LISTS = {
 
 # Numeric layout options and their allowed ranges (the bar editor offers these as controls).
 LAYOUT_NUMBERS = {
-    "autohide": {"delayMs": (500, 60000), "tapZone": (0.05, 0.45)},
+    "autohide": {"delayMs": (500, 60000), "tapZone": (0.05, 0.5)},
     "chapterFlow": {
         "overscrollPx": (20, 2000),
         "settleMs": (0, 3000),
@@ -140,10 +140,8 @@ def validate_override(data: Any) -> None:
             section = layout.get(name, {})
             _require(isinstance(section, dict), f"“layout.{name}” must be an object.")
             for key, value in section.items():
-                if key == "enabled":
-                    _require(
-                        isinstance(value, bool), f"“layout.{name}.enabled” must be true/false."
-                    )
+                if key in ("enabled", "immersive"):
+                    _require(isinstance(value, bool), f"“layout.{name}.{key}” must be true/false.")
                 elif key in limits:
                     low, high = limits[key]
                     ok = isinstance(value, int | float) and not isinstance(value, bool)

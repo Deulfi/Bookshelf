@@ -251,6 +251,7 @@ def test_layout_editor_keeps_the_rest_of_the_file(admin_client: TestClient) -> N
     [
         {"layout": {"top": [42]}},
         {"layout": {"autohide": {"delayMs": 5}}},
+        {"layout": {"autohide": {"immersive": "yes"}}},
         {"layout": {"chapterFlow": {"overscrollPx": "far"}}},
         {"nothing": 1},
         [1],
@@ -258,6 +259,31 @@ def test_layout_editor_keeps_the_rest_of_the_file(admin_client: TestClient) -> N
 )
 def test_layout_editor_rejects_bad_input(admin_client: TestClient, body: object) -> None:
     assert admin_client.post("/settings/reader/layout", json=body).status_code == 422
+
+
+def test_tap_zone_may_cover_the_whole_screen(admin_client: TestClient) -> None:
+    # tapZone 0.5 means the top and bottom halves meet: tapping anywhere toggles the bars.
+    assert (
+        admin_client.post(
+            "/settings/reader/layout", json={"layout": {"autohide": {"tapZone": 0.5}}}
+        ).status_code
+        == 200
+    )
+    assert (
+        admin_client.post(
+            "/settings/reader/layout", json={"layout": {"autohide": {"tapZone": 0.6}}}
+        ).status_code
+        == 422
+    )
+
+
+def test_immersive_fullscreen_toggle_is_accepted(admin_client: TestClient) -> None:
+    assert (
+        admin_client.post(
+            "/settings/reader/layout", json={"layout": {"autohide": {"immersive": False}}}
+        ).status_code
+        == 200
+    )
 
 
 def test_layout_editor_refuses_to_overwrite_a_broken_file(admin_client: TestClient) -> None:

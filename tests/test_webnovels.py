@@ -454,6 +454,41 @@ def test_link_rejects_an_already_linked_book(
     assert "already linked" in second.text
 
 
+def test_relinking_after_a_failed_link_is_allowed(
+    configured_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A link that never worked (e.g. the crawl failed) must not leave the book stuck as
+    "already linked"; the user can try again."""
+    book_id = upload(configured_client, "local.epub", make_epub(series=None)).json()["id"]
+
+    # First link: the crawl fails, leaving a failed import with no novel id.
+    fake = FakeClient(make_epub(), {"job-fetch": _failed("job-fetch", "the site refused")})
+    _use(monkeypatch, fake)
+    assert (
+        configured_client.post(
+            f"/books/{book_id}/link", data={"url": URL}, follow_redirects=False
+        ).status_code
+        == 303
+    )
+    with configured_client.app.state.sessionmaker() as db:
+        rid = db.scalar(select(WebnovelImport.id).where(WebnovelImport.book_id == book_id))
+    assert _advance_to_done(configured_client, rid).state == "failed"
+
+    # Second link succeeds: the stale failed record is replaced, no "already linked" error.
+    fake2 = FakeClient(
+        make_chapter_epub("Local", 4),
+        {"job-fetch": _done("job-fetch", novel_id="nv9"), "job-render": _done("job-render")},
+    )
+    _use(monkeypatch, fake2)
+    resp = configured_client.post(
+        f"/books/{book_id}/link", data={"url": URL}, follow_redirects=False
+    )
+    assert resp.status_code == 303
+    with configured_client.app.state.sessionmaker() as db:
+        rid2 = db.scalar(select(WebnovelImport.id).where(WebnovelImport.book_id == book_id))
+    assert _advance_to_done(configured_client, rid2).novel_id == "nv9"
+
+
 def test_link_empty_url_errors(configured_client: TestClient) -> None:
     book_id = upload(configured_client, "local.epub", make_epub(series=None)).json()["id"]
     resp = configured_client.post(

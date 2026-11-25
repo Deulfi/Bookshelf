@@ -23,7 +23,7 @@ import {
 import { prevChapter, nextChapter, prevPage, nextPage } from './navigation.js'
 import { goBack, goForward } from './history.js'
 import {
-    progressBar, progressText, chapterProgress, chapterCounter, pageCounter,
+    progressBar, progressPopover, progressText, chapterProgress, chapterCounter, pageCounter,
 } from './progress.js'
 
 export { ui }
@@ -53,7 +53,7 @@ for (const element of [
     spacer, space, exit, title, chapterTitle, toc, settings, barEditor, search, themeToggle,
     fullscreen, prevChapter, nextChapter, prevPage, nextPage,
     goBack, goForward,
-    progressBar, progressText, chapterProgress, chapterCounter, pageCounter,
+    progressBar, progressPopover, progressText, chapterProgress, chapterCounter, pageCounter,
 ]) register(element)
 
 /** Import drop-in plugins (module URLs); a broken plugin is logged and skipped. */

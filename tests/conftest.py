@@ -48,16 +48,17 @@ def make_epub(
     title: str = "The Test Book",
     author: str = "Ada Lovelace",
     series: str | None = "Engines",
-    series_index: str = "2",
+    series_index: str | None = "2",
     with_cover: bool = True,
 ) -> bytes:
     """Build a minimal but valid EPUB 2 file in memory."""
-    series_meta = (
-        f'<meta name="calibre:series" content="{series}"/>'
-        f'<meta name="calibre:series_index" content="{series_index}"/>'
-        if series
-        else ""
-    )
+    if not series:
+        series_meta = ""
+    else:
+        index_meta = (
+            f'<meta name="calibre:series_index" content="{series_index}"/>' if series_index else ""
+        )
+        series_meta = f'<meta name="calibre:series" content="{series}"/>{index_meta}'
     cover_meta = '<meta name="cover" content="cover-img"/>' if with_cover else ""
     cover_item = (
         '<item id="cover-img" href="images/cover.png" media-type="image/png"/>'

@@ -85,6 +85,16 @@ export class ChapterFlow {
         this.#check()
     }
 
+    /**
+     * How far to overscroll to turn the chapter, adapted to the viewport: the configured
+     * distance, but never more than 40% of the screen height, so a short screen (a phone in
+     * landscape) needs a proportionally smaller — and reachable — swipe. Floored so it stays
+     * deliberate.
+     */
+    #threshold() {
+        return Math.max(40, Math.min(this.#options.overscrollPx, innerHeight * 0.4))
+    }
+
     // ---------- where are we? ----------
 
     #scheduleCheck() {
@@ -130,7 +140,9 @@ export class ChapterFlow {
         }, { passive: true })
         target.addEventListener('touchend', () => {
             this.#touchY = null
-            this.#amount = 0 // a swipe must carry past the edge on its own
+            // Keep what this swipe collected: a phone (landscape especially) rarely has the room
+            // to cross the whole distance in one stroke, so several swipes add up. The idle timer
+            // (resetMs) still clears it after a pause, so a stray swipe never advances on its own.
             this.#render()
         }, { passive: true })
     }
@@ -154,7 +166,7 @@ export class ChapterFlow {
             this.#amount = 0
             this.#render()
         }, this.#options.resetMs)
-        if (this.#amount >= this.#options.overscrollPx) this.#turn(edge)
+        if (this.#amount >= this.#threshold()) this.#turn(edge)
         else this.#render()
     }
 
@@ -183,7 +195,7 @@ export class ChapterFlow {
             || (edge < 0 && (this.#hovered
                 || performance.now() - this.#upIntentAt < this.#options.resetMs))
         // A hidden hint drops its fill too: a stale "is-filling" would keep it on screen.
-        const progress = visible ? Math.min(1, this.#amount / this.#options.overscrollPx) : 0
+        const progress = visible ? Math.min(1, this.#amount / this.#threshold()) : 0
         this.#hint.classList.toggle('is-active', visible)
         this.#hint.classList.toggle('is-filling', progress > 0)
         this.#hint.style.setProperty('--progress', String(progress))

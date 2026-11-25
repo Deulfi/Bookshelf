@@ -28,9 +28,14 @@ def extract_epub(path: Path) -> BookMetadata:
         if metadata is None:
             return BookMetadata(cover=cover)
 
+        title = _text(metadata, ".//dc:title")
         series, series_index = _series(metadata)
+        # lightnovel-crawler (and some tools) set calibre:series to the book's own title with no
+        # number; that is not a real series, just a redundant folder level, so drop it.
+        if series and series_index is None and title and series.strip() == title.strip():
+            series = None
         return BookMetadata(
-            title=_text(metadata, ".//dc:title"),
+            title=title,
             author=" & ".join(_authors(metadata)) or None,
             series=series,
             series_index=series_index,
