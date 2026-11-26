@@ -44,8 +44,8 @@ def create_user(
     request: Request,
     db: DB,
     admin: AdminUser,
-    username: Annotated[str, Form()],
-    password: Annotated[str, Form()],
+    username: Annotated[str, Form()] = "",
+    password: Annotated[str, Form()] = "",
     is_admin: Annotated[bool, Form()] = False,
 ) -> Response:
     try:
@@ -63,7 +63,7 @@ def reset_password(
     db: DB,
     admin: AdminUser,
     user_id: int,
-    password: Annotated[str, Form()],
+    password: Annotated[str, Form()] = "",
 ) -> Response:
     target = _user_or_404(db, user_id)
     try:

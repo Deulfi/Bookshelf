@@ -6,10 +6,10 @@ to crawl a source URL and render an EPUB, downloads that EPUB, then hands it to
 chapters) exactly as an upload would be. Nothing about Bookshelf's file-based model,
 KOReader sync or OPDS changes — the novel is just another EPUB once it lands.
 
-This service owns ONLY the conversation with lncrawl. It never touches the database
-or FastAPI, in keeping with the service layer. It talks to lncrawl's REST API over
-httpx and raises :class:`WebnovelError` (user-facing message) for the router to turn
-into a response.
+The first half of this module is ONLY the conversation with lncrawl (no database, no
+FastAPI): it talks to lncrawl's REST API over httpx and raises :class:`WebnovelError`
+(user-facing message) for the router to turn into a response. The orchestration half
+further down tracks imports in the database.
 
 A crawl runs for minutes on the lncrawl side, so the flow is submit-then-poll:
 
@@ -38,6 +38,7 @@ from datetime import UTC, datetime
 from enum import IntEnum
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from sqlalchemy import select
@@ -47,6 +48,8 @@ from ..config import Settings
 from ..models import Book, User, WebnovelImport
 from ..storage import Storage
 from . import library
+
+MAX_URL_LENGTH = 500  # the URL is stored as the title until lncrawl reports the real one
 
 
 class WebnovelError(Exception):
@@ -74,6 +77,23 @@ class JobStatus(IntEnum):
     PAUSED = 5
 
 
+def _to_int(value: Any) -> int:
+    """An integer field from lncrawl; anything unusable counts as 0."""
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _field(data: Any, key: str) -> Any:
+    """A required field of an lncrawl reply, or a user-facing error if the reply is not shaped
+    as expected (a version mismatch, or an error payload)."""
+    try:
+        return data[key]
+    except (KeyError, IndexError, TypeError):
+        raise WebnovelError("The web-novel server sent an unexpected reply.") from None
+
+
 @dataclass(frozen=True)
 class Job:
     """A crawl/render job. ``novel_id`` is only set once a fetch job has succeeded."""
@@ -96,7 +116,7 @@ class Job:
         return cls(
             id=data.get("id", ""),
             status=status,
-            progress=int(data.get("progress", 0)),
+            progress=_to_int(data.get("progress")),
             done=bool(data.get("is_done")),
             error=data.get("error") or extra.get("failure_detail") or "",
             title=data.get("job_title", ""),
@@ -121,9 +141,9 @@ class Artifact:
             novel_id=data.get("novel_id", ""),
             fmt=data.get("format", ""),
             file_name=data.get("file_name", ""),
-            file_size=int(data.get("file_size", 0)),
+            file_size=_to_int(data.get("file_size")),
             output_file=data.get("output_file", ""),
-            created_at=int(data.get("created_at", 0)),
+            created_at=_to_int(data.get("created_at")),
         )
 
 
@@ -150,7 +170,9 @@ class WebnovelClient:
         *,
         verify_tls: bool = True,
         timeout: float = 60.0,
+        max_download_bytes: int | None = None,
     ) -> None:
+        self._max_download_bytes = max_download_bytes
         self._username = username
         self._password = password
         self._http = httpx.Client(
@@ -172,6 +194,7 @@ class WebnovelClient:
             settings.lncrawl_password,
             verify_tls=settings.lncrawl_verify_tls,
             timeout=settings.lncrawl_timeout,
+            max_download_bytes=settings.max_upload_bytes,
         )
 
     def close(self) -> None:
@@ -190,6 +213,8 @@ class WebnovelClient:
             resp = self._http.request(method, path, json=payload)
             resp.raise_for_status()
             return resp.json()
+        except ValueError as exc:  # not JSON
+            raise WebnovelError("The web-novel server sent an unexpected reply.") from exc
         except httpx.HTTPStatusError as exc:
             raise WebnovelError(
                 f"The web-novel server rejected the request ({exc.response.status_code})."
@@ -202,17 +227,19 @@ class WebnovelClient:
     def submit_fetch(self, url: str) -> str:
         """Start crawling a novel and its chapters. Returns the job id to poll."""
         job = self._json("POST", "/api/job/create/fetch-novels", {"urls": [url], "full": True})
-        return job["id"]
+        return str(_field(job, "id"))
 
     def submit_make_epub(self, novel_id: str) -> str:
         """Start rendering a crawled novel to EPUB. Returns the job id to poll."""
         payload = {"novel_id": novel_id, "formats": ["epub"]}
-        return self._json("POST", "/api/job/create/make-artifacts", payload)["id"]
+        job = self._json("POST", "/api/job/create/make-artifacts", payload)
+        return str(_field(job, "id"))
 
     def submit_fetch_latest(self, novel_id: str) -> str:
         """Refresh metadata, pull new chapters and re-render, in one job (the refresh button)."""
         payload = {"novel_id": novel_id}
-        return self._json("POST", "/api/job/create/fetch-latest", payload)["id"]
+        job = self._json("POST", "/api/job/create/fetch-latest", payload)
+        return str(_field(job, "id"))
 
     # -- polling ------------------------------------------------------------------------------
 
@@ -252,10 +279,12 @@ class WebnovelClient:
         """The newest EPUB for a novel. Look up by novel_id — not by the submitted job id,
         whose artifacts are produced by a child job."""
         data = self._json("GET", f"/api/novel/{novel_id}/artifacts")
+        if not isinstance(data, list):
+            raise WebnovelError("The web-novel server sent an unexpected reply.")
         epubs = [
             Artifact.from_json(a)
             for a in data
-            if a.get("format") == "epub" and a.get("is_available")
+            if isinstance(a, dict) and a.get("format") == "epub" and a.get("is_available")
         ]
         if not epubs:
             raise WebnovelError("The web-novel server produced no EPUB for this novel.")
@@ -268,7 +297,9 @@ class WebnovelClient:
                 "/api/auth/login", json={"email": self._username, "password": self._password}
             )
             resp.raise_for_status()
-            return resp.json()["token"]
+            return str(_field(resp.json(), "token"))
+        except ValueError as exc:  # not JSON
+            raise WebnovelError("The web-novel server sent an unexpected reply.") from exc
         except httpx.HTTPStatusError as exc:
             raise WebnovelError(
                 f"The web-novel server rejected the sign-in ({exc.response.status_code})."
@@ -286,9 +317,17 @@ class WebnovelClient:
                 "GET", f"/static/{artifact.output_file}", params={"token": token}
             ) as resp:
                 resp.raise_for_status()
+                limit = self._max_download_bytes
+                written = 0
                 with dest.open("wb") as fh:
                     for chunk in resp.iter_bytes(1024 * 64):
+                        written += len(chunk)
+                        if limit is not None and written > limit:
+                            raise WebnovelError("The EPUB is larger than the upload limit.")
                         fh.write(chunk)
+        except WebnovelError:
+            dest.unlink(missing_ok=True)
+            raise
         except httpx.HTTPStatusError as exc:
             dest.unlink(missing_ok=True)
             raise WebnovelError(
@@ -311,6 +350,19 @@ class WebnovelClient:
 # current job and, when it finishes, either starts the next one or imports the finished EPUB.
 
 _LOG_LINES = 50
+
+
+def _clean_url(url: str | None) -> str:
+    """The trimmed source URL, or a user-facing error if it is not a usable http(s) address."""
+    text = (url or "").strip()
+    if not text:
+        raise WebnovelError("Enter a novel URL.")
+    parts = urlsplit(text)
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        raise WebnovelError("Enter a web address starting with http:// or https://.")
+    if len(text) > MAX_URL_LENGTH:
+        raise WebnovelError("That web address is too long.")
+    return text
 
 
 def list_imports(db: Session, user: User) -> list[WebnovelImport]:
@@ -367,9 +419,7 @@ def cancel_import(
 
 def start_import(db: Session, settings: Settings, user: User, url: str) -> WebnovelImport:
     """Submit a crawl for ``url`` and create the tracking row (state=running, stage=fetch)."""
-    url = (url or "").strip()
-    if not url:
-        raise WebnovelError("Enter a novel URL.")
+    url = _clean_url(url)
     client = _client_or_error(settings)
     with client:
         job_id = client.submit_fetch(url)
@@ -391,9 +441,7 @@ def link_book(db: Session, settings: Settings, user: User, book: Book, url: str)
     """Link an existing book to a web source so it can be updated. Submits a crawl; when it
     finishes, the book's file is replaced with lncrawl's EPUB (or left as-is if identical), and
     the book gains a novel id for future refreshes. Transferred web novels resume this way."""
-    url = (url or "").strip()
-    if not url:
-        raise WebnovelError("Enter a novel URL.")
+    url = _clean_url(url)
     existing = for_book(db, user, book.id)
     if existing is not None:
         # A live link (running, or already attached to a novel) must not be clobbered. A leftover

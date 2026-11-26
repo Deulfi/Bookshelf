@@ -8,7 +8,14 @@ from pathlib import Path
 from urllib.parse import unquote
 from xml.etree import ElementTree as ET
 
-from .base import MAX_COVER_BYTES, BookMetadata, html_to_text, parse_float, register
+from .base import (
+    MAX_COVER_BYTES,
+    BookMetadata,
+    html_to_text,
+    parse_float,
+    read_member,
+    register,
+)
 
 NS = {
     "c": "urn:oasis:names:tc:opendocument:xmlns:container",
@@ -22,7 +29,7 @@ _OPF_ROLE = f"{{{NS['opf']}}}role"
 def extract_epub(path: Path) -> BookMetadata:
     with zipfile.ZipFile(path) as archive:
         opf_path = _package_path(archive)
-        package = ET.fromstring(archive.read(opf_path))
+        package = ET.fromstring(read_member(archive, opf_path))
         metadata = package.find(".//opf:metadata", NS)
         cover = _cover(archive, package, posixpath.dirname(opf_path))
         if metadata is None:
@@ -48,7 +55,7 @@ def extract_epub(path: Path) -> BookMetadata:
 
 def _package_path(archive: zipfile.ZipFile) -> str:
     try:
-        container = ET.fromstring(archive.read("META-INF/container.xml"))
+        container = ET.fromstring(read_member(archive, "META-INF/container.xml"))
         rootfile = container.find(".//c:rootfile", NS)
         if rootfile is not None and rootfile.get("full-path"):
             return rootfile.get("full-path", "")

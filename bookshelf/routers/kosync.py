@@ -19,6 +19,9 @@ from ..services import progress, users
 
 router = APIRouter(tags=["koreader-sync"])
 
+MAX_DOCUMENT_LENGTH = 128  # the ReadingProgress.document column
+MAX_PROGRESS_LENGTH = 4096  # an XPointer is a few hundred characters at most
+
 
 class KosyncError(Exception):
     def __init__(self, status_code: int, code: int, message: str) -> None:
@@ -89,6 +92,11 @@ def authorize(user: SyncUser) -> dict:
 def update_progress(payload: ProgressRequest, user: SyncUser, db: DB) -> dict:
     if not payload.document:
         raise KosyncError(403, 2004, "Field 'document' not provided.")
+    if (
+        len(payload.document) > MAX_DOCUMENT_LENGTH
+        or len(str(payload.progress)) > MAX_PROGRESS_LENGTH
+    ):
+        raise KosyncError(403, 2003, "Invalid request")
     record = progress.save_progress(
         db,
         user.id,

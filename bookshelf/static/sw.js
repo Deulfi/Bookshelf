@@ -1,14 +1,14 @@
 /* Bookshelf service worker.
  *
  * Minimal and privacy-safe: it caches only versioned static assets under /static/
- * (app.css, app.js, reader + foliate modules, icons), which carry a ?v=<hash> and
+ * (app.css, app.js, reader + foliate modules), which carry a ?v=<hash> and
  * so never change content under a given URL. It deliberately never caches HTML
  * pages, book files or API/sync responses, so nothing user- or auth-scoped is
  * stored, and offline navigation is not offered (yet). Its only other job is to
  * exist with a fetch handler, which is what makes the app installable.
  *
  * Bump CACHE to retire old entries (e.g. after replacing unversioned icons). */
-const CACHE = "bookshelf-static-v1";
+const CACHE = "bookshelf-static-v2";
 
 self.addEventListener("install", () => self.skipWaiting());
 
@@ -28,6 +28,7 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
   if (!url.pathname.startsWith("/static/")) return; // never HTML, book files or sync endpoints
+  if (!url.searchParams.has("v")) return; // only content-hashed URLs are safe to keep
 
   event.respondWith(
     (async () => {

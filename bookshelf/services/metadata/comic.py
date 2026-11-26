@@ -7,7 +7,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from xml.etree import ElementTree as ET
 
-from .base import MAX_COVER_BYTES, BookMetadata, parse_float, register
+from .base import MAX_COVER_BYTES, BookMetadata, parse_float, read_member, register
 
 _IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp", ".gif")
 
@@ -34,7 +34,7 @@ def extract_cbz(path: Path) -> BookMetadata:
 
         metadata = BookMetadata(cover=cover)
         if "ComicInfo.xml" in archive.namelist():
-            info = ET.fromstring(archive.read("ComicInfo.xml"))
+            info = ET.fromstring(read_member(archive, "ComicInfo.xml"))
 
             def text(tag: str) -> str | None:
                 value = info.findtext(tag)

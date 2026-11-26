@@ -12,6 +12,7 @@ from ..formats import READABLE_FORMATS
 from ..models import Book, User
 from ..services import chapters, library, progress, reading_stats, webnovels
 from ..services.library import BookEntry
+from ..services.metadata.base import MAX_COVER_BYTES as MAX_COVER_UPLOAD_BYTES
 from ..services.metadata.base import parse_float
 from ..templating import render
 from ._files import book_file_response, cover_response
@@ -346,7 +347,12 @@ def update_book(
         description=description,
     )
     if cover is not None and cover.filename:
-        data = cover.file.read()
+        data = cover.file.read(MAX_COVER_UPLOAD_BYTES + 1)
+        if len(data) > MAX_COVER_UPLOAD_BYTES:
+            entry = _entry_or_404(db, user, book_id)
+            return _render_book(
+                request, db, storage, user, entry, error="The cover image is too large."
+            )
         if data:
             try:
                 library.replace_cover(db, storage, entry.book, data)

@@ -22,6 +22,7 @@ from xml.etree import ElementTree as ET
 
 from ..models import Book
 from ..storage import Storage
+from .metadata.base import read_member
 from .metadata.epub import NS, _package_path
 
 _XPOINTER = re.compile(r"^/body/DocFragment\[(\d+)\]")
@@ -97,7 +98,7 @@ class Outline:
         path, mtime_ns, size = self.source
         try:
             return _section(path, mtime_ns, size, self.spine_hrefs[index])
-        except (OSError, KeyError, ET.ParseError, zipfile.BadZipFile):
+        except (OSError, ValueError, KeyError, ET.ParseError, zipfile.BadZipFile, RecursionError):
             return None
 
 
@@ -173,7 +174,7 @@ def outline_of(storage: Storage, book: Book) -> Outline | None:
     try:
         stat = path.stat()
         outline = _outline(str(path), stat.st_mtime_ns, stat.st_size)
-    except (OSError, ValueError, KeyError, ET.ParseError, zipfile.BadZipFile):
+    except (OSError, ValueError, KeyError, ET.ParseError, zipfile.BadZipFile, RecursionError):
         return None
     return outline if outline.spine_length else None
 
@@ -280,7 +281,7 @@ def _outline(path: str, _mtime_ns: int, _size: int) -> Outline:
     with zipfile.ZipFile(path) as archive:
         opf_path = _package_path(archive)
         base = posixpath.dirname(opf_path)
-        package = ET.fromstring(archive.read(opf_path))
+        package = ET.fromstring(read_member(archive, opf_path))
         manifest = {
             item.get("id"): item for item in package.findall(".//opf:manifest/opf:item", NS)
         }
@@ -329,7 +330,7 @@ def _outline(path: str, _mtime_ns: int, _size: int) -> Outline:
 def _section(path: str, _mtime_ns: int, _size: int, href: str) -> Section:
     """Block elements of one spine file, parsed once per file version."""
     with zipfile.ZipFile(path) as archive:
-        text = archive.read(href).decode("utf-8", "replace")
+        text = read_member(archive, href).decode("utf-8", "replace")
     try:
         root = ET.fromstring(text)
     except ET.ParseError:
@@ -403,7 +404,7 @@ def _fragment(href: str) -> str | None:
 
 
 def _nav_entries(archive: zipfile.ZipFile, nav_path: str) -> list[tuple[str, str, str | None]]:
-    root = ET.fromstring(archive.read(nav_path))
+    root = ET.fromstring(read_member(archive, nav_path))
     base = posixpath.dirname(nav_path)
     navs = list(root.iter(f"{_XHTML}nav"))
     toc = next((n for n in navs if n.get(_EPUB_TYPE) == "toc"), navs[0] if navs else None)
@@ -421,7 +422,7 @@ def _nav_entries(archive: zipfile.ZipFile, nav_path: str) -> list[tuple[str, str
 
 
 def _ncx_entries(archive: zipfile.ZipFile, ncx_path: str) -> list[tuple[str, str, str | None]]:
-    root = ET.fromstring(archive.read(ncx_path))
+    root = ET.fromstring(read_member(archive, ncx_path))
     base = posixpath.dirname(ncx_path)
     entries = []
     for point in root.iter(f"{_NCX}navPoint"):  # document order = reading order

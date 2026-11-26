@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import logging
 import re
+import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass, fields
 from pathlib import Path, PurePath
@@ -12,6 +13,7 @@ from pathlib import Path, PurePath
 log = logging.getLogger(__name__)
 
 MAX_COVER_BYTES = 20 * 1024 * 1024
+MAX_XML_BYTES = 20 * 1024 * 1024  # package files, tables of contents, chapter text
 _FIELD_LIMITS = {"title": 500, "author": 500, "series": 500, "language": 20, "publisher": 300}
 
 
@@ -53,6 +55,18 @@ def register(*formats: str) -> Callable[[Extractor], Extractor]:
         return extractor
 
     return decorator
+
+
+def read_member(archive: zipfile.ZipFile, name: str, limit: int = MAX_XML_BYTES) -> bytes:
+    """Read one archive member, refusing one that would decompress to more than ``limit``.
+
+    ``ZipInfo.file_size`` is the declared *uncompressed* size, and the zip reader never yields
+    more than that, so checking it first bounds memory against a zip bomb.
+    """
+    info = archive.getinfo(name)
+    if info.file_size > limit:
+        raise ValueError(f"{name} is too large to read")
+    return archive.read(info)
 
 
 def extract_metadata(path: Path, fmt: str, filename: str) -> BookMetadata:

@@ -63,8 +63,8 @@ def change_password(
     request: Request,
     db: DB,
     user: CurrentUser,
-    new_password: Annotated[str, Form()],
-    new_password_confirm: Annotated[str, Form()],
+    new_password: Annotated[str, Form()] = "",
+    new_password_confirm: Annotated[str, Form()] = "",
     current_password: Annotated[str, Form()] = "",
 ) -> Response:
     error = None

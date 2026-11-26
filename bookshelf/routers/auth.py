@@ -35,9 +35,9 @@ def setup(
     request: Request,
     db: DB,
     settings: AppSettings,
-    username: Annotated[str, Form()],
-    password: Annotated[str, Form()],
-    password_confirm: Annotated[str, Form()],
+    username: Annotated[str, Form()] = "",
+    password: Annotated[str, Form()] = "",
+    password_confirm: Annotated[str, Form()] = "",
 ) -> Response:
     if settings.auth != "password":
         return RedirectResponse("/", status_code=303)
@@ -77,8 +77,8 @@ def login(
     request: Request,
     db: DB,
     settings: AppSettings,
-    username: Annotated[str, Form()],
-    password: Annotated[str, Form()],
+    username: Annotated[str, Form()] = "",
+    password: Annotated[str, Form()] = "",
     next: Annotated[str, Form()] = "/",
 ) -> Response:
     if settings.auth != "password":

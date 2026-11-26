@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -39,6 +40,8 @@ def is_valid_name(name: str) -> bool:
 class FileStore:
     def __init__(self, directory: Path) -> None:
         self.directory = directory
+        # Requests run in a thread pool: make check-then-replace (If-Match) atomic.
+        self._lock = threading.Lock()
 
     def list(self) -> list[StoredFile]:
         if not self.directory.is_dir():
@@ -79,16 +82,17 @@ class FileStore:
         if_none_match: str | None = None,
     ) -> bool:
         """Atomically move ``temp_path`` to ``name``. Returns True if the file was created."""
-        current = self.get(name)
-        if if_match is not None and not _etag_matches(if_match, current):
-            raise PreconditionFailed
-        if if_none_match is not None and _etag_matches(if_none_match, current):
-            raise PreconditionFailed
-        path = self.directory / name
-        os.replace(temp_path, path)
-        if current is not None:
-            _advance_mtime(path, current)
-        return current is None
+        with self._lock:
+            current = self.get(name)
+            if if_match is not None and not _etag_matches(if_match, current):
+                raise PreconditionFailed
+            if if_none_match is not None and _etag_matches(if_none_match, current):
+                raise PreconditionFailed
+            path = self.directory / name
+            os.replace(temp_path, path)
+            if current is not None:
+                _advance_mtime(path, current)
+            return current is None
 
     def delete(self, name: str) -> bool:
         current = self.get(name)
